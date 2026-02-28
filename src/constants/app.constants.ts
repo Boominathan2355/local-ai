@@ -1,0 +1,32 @@
+export const APP_NAME = 'Local AI Assistant'
+export const APP_VERSION = '1.0.0'
+
+export const WINDOW_CONFIG = {
+    DEFAULT_WIDTH: 1200,
+    DEFAULT_HEIGHT: 800,
+    MIN_WIDTH: 800,
+    MIN_HEIGHT: 600
+} as const
+
+export const LLAMA_SERVER_CONFIG = {
+    DEFAULT_PORT: 8080,
+    DEFAULT_HOST: '127.0.0.1',
+    DEFAULT_THREADS: 6,
+    DEFAULT_CONTEXT_SIZE: 2048,
+    DEFAULT_GPU_LAYERS: 0,
+    HEALTH_CHECK_INTERVAL_MS: 5000,
+    MAX_RESTART_ATTEMPTS: 3,
+    STARTUP_TIMEOUT_MS: 30000
+} as const
+
+export const CONTEXT_LIMITS = {
+    MAX_CONTEXT_TOKENS: 2048,
+    MAX_ROLLING_MESSAGES: 16,
+    CHARS_PER_TOKEN_ESTIMATE: 4,
+    SYSTEM_PROMPT_RESERVE_TOKENS: 256
+} as const
+
+export const STORAGE_KEYS = {
+    CONVERSATIONS: 'conversations',
+    SETTINGS: 'settings'
+} as const

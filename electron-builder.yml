@@ -1,0 +1,22 @@
+appId: com.localai.assistant
+productName: Local AI Assistant
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron/*'
+  - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,electron.vite.config.ts}'
+extraResources:
+  - from: llama/
+    to: llama/
+    filter:
+      - '**/*'
+linux:
+  target:
+    - AppImage
+    - deb
+  maintainer: localai
+  category: Utility
+  icon: build/icon.png
