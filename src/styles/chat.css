@@ -694,15 +694,16 @@
 }
 
 .switcher__item-wrap:hover {
-    background: var(--bg-hover);
+    background: rgba(255, 255, 255, 0.05);
 }
 
 .switcher__item-wrap--available {
-    opacity: 0.7;
+    opacity: 0.8;
 }
 
 .switcher__item--active {
-    background: rgba(108, 92, 231, 0.1);
+    background: rgba(108, 92, 231, 0.15);
+    border: 1px solid rgba(108, 92, 231, 0.2);
 }
 
 .switcher__item-info {
