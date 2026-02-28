@@ -2,14 +2,14 @@ import React, { useState } from 'react'
 import { AppSettings, McpServer } from '../../types/settings.types'
 import '../../styles/mcp.css'
 
-interface MCPRegistryProps {
+interface McpRegistryProps {
     isOpen: boolean
     onClose: () => void
     settings: AppSettings
     onUpdateSettings: (changes: Partial<AppSettings>) => void
 }
 
-export const MCPRegistry: React.FC<MCPRegistryProps> = ({
+export const McpRegistry: React.FC<McpRegistryProps> = ({
     isOpen,
     onClose,
     settings,

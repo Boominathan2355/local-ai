@@ -5,7 +5,7 @@ import { ChatWindow } from './components/chat/ChatWindow'
 import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ModelSetup } from './components/setup/ModelSetup'
 import { ModelLibrary } from './components/library/ModelLibrary'
-import { MCPRegistry } from './components/library/MCPRegistry'
+import { McpRegistry } from './components/library/McpRegistry'
 
 import { useConversations } from './hooks/useConversations'
 import { useChat } from './hooks/useChat'
@@ -167,7 +167,7 @@ const App: React.FC = () => {
                 onUpdateSettings={updateSettings}
             />
 
-            <MCPRegistry
+            <McpRegistry
                 isOpen={isMcpOpen}
                 onClose={() => setIsMcpOpen(false)}
                 settings={settings}
