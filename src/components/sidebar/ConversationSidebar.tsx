@@ -10,6 +10,7 @@ interface ConversationSidebarProps {
     onDeleteConversation: (id: string) => void
     onNewChat: () => void
     onOpenSettings: () => void
+    onOpenMcp: () => void
 }
 
 export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
@@ -18,7 +19,8 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     onSelectConversation,
     onDeleteConversation,
     onNewChat,
-    onOpenSettings
+    onOpenSettings,
+    onOpenMcp
 }) => {
     return (
         <aside className="sidebar" id="sidebar">
@@ -53,11 +55,19 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
             <div className="sidebar__footer">
                 <button
-                    className="sidebar__settings-btn"
+                    className="sidebar__footer-btn"
+                    onClick={onOpenMcp}
+                    id="mcp-btn"
+                >
+                    <span>🧩</span>
+                    <span>MCP</span>
+                </button>
+                <button
+                    className="sidebar__footer-btn"
                     onClick={onOpenSettings}
                     id="settings-btn"
                 >
-                    <span>⚙</span>
+                    <span>⚙️</span>
                     <span>Settings</span>
                 </button>
             </div>

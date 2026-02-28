@@ -5,6 +5,7 @@ import { ChatWindow } from './components/chat/ChatWindow'
 import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ModelSetup } from './components/setup/ModelSetup'
 import { ModelLibrary } from './components/library/ModelLibrary'
+import { MCPRegistry } from './components/library/MCPRegistry'
 
 import { useConversations } from './hooks/useConversations'
 import { useChat } from './hooks/useChat'
@@ -22,6 +23,7 @@ import './styles/model-library.css'
 const App: React.FC = () => {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
     const [isLibraryOpen, setIsLibraryOpen] = useState(false)
+    const [isMcpOpen, setIsMcpOpen] = useState(false)
     const [needsSetup, setNeedsSetup] = useState<boolean | null>(null)
     const [activeModelId, setActiveModelId] = useState<string | null>(null)
 
@@ -130,6 +132,7 @@ const App: React.FC = () => {
                 onDeleteConversation={deleteConversation}
                 onNewChat={createConversation}
                 onOpenSettings={() => setIsSettingsOpen(true)}
+                onOpenMcp={() => setIsMcpOpen(true)}
             />
 
             <ChatWindow
@@ -160,6 +163,13 @@ const App: React.FC = () => {
                 onClose={() => setIsLibraryOpen(false)}
                 activeModelId={activeModelId}
                 onModelSwitch={handleSwitchModel}
+                settings={settings}
+                onUpdateSettings={updateSettings}
+            />
+
+            <MCPRegistry
+                isOpen={isMcpOpen}
+                onClose={() => setIsMcpOpen(false)}
                 settings={settings}
                 onUpdateSettings={updateSettings}
             />

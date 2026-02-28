@@ -24,21 +24,20 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (!isOpen) return null
 
     return (
-        <>
-            <div className="settings-overlay" onClick={onClose} id="settings-overlay" />
-            <div className="settings-panel" id="settings-panel">
-                <div className="settings-panel__header">
-                    <h2 className="settings-panel__title">Settings</h2>
+        <div className="settings-overlay" id="settings-panel">
+            <div className="settings-container">
+                <header className="settings__header">
+                    <h2 className="settings__title">⚙️ Settings</h2>
                     <button
-                        className="settings-panel__close"
+                        className="settings__close"
                         onClick={onClose}
                         id="close-settings-btn"
                     >
                         ✕
                     </button>
-                </div>
+                </header>
 
-                <div className="settings-panel__body">
+                <div className="settings__content">
                     {/* Model Status */}
                     <div className="settings-section">
                         <div className="settings-section__title">Model Status</div>
@@ -100,7 +99,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             <label className="settings-field__label">Temperature</label>
                             <input
                                 type="range"
-                                className="settings-field__input"
+                                className="settings-field__input slider"
                                 min="0"
                                 max="2"
                                 step="0.1"
@@ -113,59 +112,52 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                             </div>
                         </div>
 
-                        <div className="settings-field">
-                            <label className="settings-field__label">Max Tokens</label>
-                            <input
-                                type="number"
-                                className="settings-field__input"
-                                min="64"
-                                max="2048"
-                                step="64"
-                                value={settings.maxTokens}
-                                onChange={(e) => onUpdateSettings({ maxTokens: parseInt(e.target.value, 10) })}
-                                id="max-tokens-input"
-                            />
-                            <div className="settings-field__hint">
-                                Maximum response length in tokens
+                        <div className="settings-field-row">
+                            <div className="settings-field">
+                                <label className="settings-field__label">Max Tokens</label>
+                                <input
+                                    type="number"
+                                    className="settings-field__input"
+                                    min="64"
+                                    max="2048"
+                                    step="64"
+                                    value={settings.maxTokens}
+                                    onChange={(e) => onUpdateSettings({ maxTokens: parseInt(e.target.value, 10) })}
+                                    id="max-tokens-input"
+                                />
                             </div>
-                        </div>
 
-                        <div className="settings-field">
-                            <label className="settings-field__label">Context Size</label>
-                            <input
-                                type="number"
-                                className="settings-field__input"
-                                min="512"
-                                max="4096"
-                                step="256"
-                                value={settings.contextSize}
-                                onChange={(e) => onUpdateSettings({ contextSize: parseInt(e.target.value, 10) })}
-                                id="context-size-input"
-                            />
-                            <div className="settings-field__hint">
-                                Total context window (2048 recommended for 12GB RAM)
+                            <div className="settings-field">
+                                <label className="settings-field__label">Context Size</label>
+                                <input
+                                    type="number"
+                                    className="settings-field__input"
+                                    min="512"
+                                    max="4096"
+                                    step="256"
+                                    value={settings.contextSize}
+                                    onChange={(e) => onUpdateSettings({ contextSize: parseInt(e.target.value, 10) })}
+                                    id="context-size-input"
+                                />
                             </div>
-                        </div>
 
-                        <div className="settings-field">
-                            <label className="settings-field__label">Threads</label>
-                            <input
-                                type="number"
-                                className="settings-field__input"
-                                min="1"
-                                max="16"
-                                step="1"
-                                value={settings.threads}
-                                onChange={(e) => onUpdateSettings({ threads: parseInt(e.target.value, 10) })}
-                                id="threads-input"
-                            />
-                            <div className="settings-field__hint">
-                                CPU threads for inference (leave 2 free for system)
+                            <div className="settings-field">
+                                <label className="settings-field__label">Threads</label>
+                                <input
+                                    type="number"
+                                    className="settings-field__input"
+                                    min="1"
+                                    max="16"
+                                    step="1"
+                                    value={settings.threads}
+                                    onChange={(e) => onUpdateSettings({ threads: parseInt(e.target.value, 10) })}
+                                    id="threads-input"
+                                />
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </>
+        </div>
     )
 }
