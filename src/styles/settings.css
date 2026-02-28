@@ -6,7 +6,7 @@
     position: fixed;
     inset: 0;
     z-index: 2100;
-    /* Above model library if both are open somehow, but usually they are mutually exclusive */
+    /* Base transition layer */
     background: rgba(0, 0, 0, 0.75);
     backdrop-filter: blur(12px);
     display: flex;

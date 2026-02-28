@@ -47,14 +47,17 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
         return () => document.removeEventListener('mousedown', handleClick)
     }, [])
 
-    const availableModels = allModels.filter(m => {
+    const readyModels = allModels.filter(m => {
         if (m.downloaded) return true
         if (m.tier === 'cloud' || m.tier === 'agent') {
             return settings.activatedCloudModels.includes(m.id)
         }
         return false
     })
-    const activeModel = availableModels.find((m) => m.id === activeModelId)
+
+    const availableModels = allModels.filter(m => !readyModels.find(rm => rm.id === m.id))
+
+    const activeModel = readyModels.find((m) => m.id === activeModelId)
     const displayName = activeModel?.name ?? 'No Model Selected'
 
     const statusIcon = modelStatus === 'ready' ? '🟢'
@@ -76,42 +79,77 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
 
             {isOpen && (
                 <div className="switcher__dropdown" id="switcher-dropdown">
-                    <div className="switcher__section-label">Active Models</div>
-                    {availableModels.length === 0 && (
-                        <div className="switcher__empty">No models ready</div>
+                    {/* Ready Section */}
+                    {readyModels.length > 0 && (
+                        <>
+                            <div className="switcher__section-label">Ready to Use</div>
+                            {readyModels.map((model) => (
+                                <div key={model.id} className={`switcher__item-wrap ${model.id === activeModelId ? 'switcher__item--active' : ''}`}>
+                                    <div className="switcher__item-info">
+                                        <span className="switcher__item-name">
+                                            {model.name}
+                                            {model.tier === 'cloud' && <span className="switcher__item-cloud-tag">Cloud</span>}
+                                            {model.tier === 'agent' && <span className="switcher__item-agent-tag">Bot</span>}
+                                        </span>
+                                        <span className="switcher__item-size">
+                                            {model.tier === 'cloud' || model.tier === 'agent' ? 'Remote' : `${model.sizeGB} GB`}
+                                        </span>
+                                    </div>
+                                    <button
+                                        className="switcher__item-action switcher__item-action--select"
+                                        onClick={() => {
+                                            if (model.id !== activeModelId) {
+                                                onSwitchModel(model.id)
+                                            }
+                                            setIsOpen(false)
+                                        }}
+                                        id={`switch-${model.id}`}
+                                    >
+                                        {model.id === activeModelId ? '✓' : 'Select'}
+                                    </button>
+                                </div>
+                            ))}
+                        </>
                     )}
-                    {availableModels.map((model) => (
-                        <button
-                            key={model.id}
-                            className={`switcher__item ${model.id === activeModelId ? 'switcher__item--active' : ''}`}
-                            onClick={() => {
-                                if (model.id !== activeModelId) {
-                                    onSwitchModel(model.id)
-                                }
-                                setIsOpen(false)
-                            }}
-                            id={`switch-${model.id}`}
-                        >
-                            <span className="switcher__item-name">
-                                {model.name}
-                                {model.tier === 'cloud' && <span className="switcher__item-cloud-tag">Cloud</span>}
-                                {model.tier === 'agent' && <span className="switcher__item-agent-tag">Bot</span>}
-                            </span>
-                            <span className="switcher__item-size">
-                                {model.tier === 'cloud' || model.tier === 'agent' ? 'Remote' : `${model.sizeGB} GB`}
-                            </span>
-                            {model.id === activeModelId && (
-                                <span className="switcher__item-check">✓</span>
-                            )}
-                        </button>
-                    ))}
+
+                    {/* Available Section */}
+                    {availableModels.length > 0 && (
+                        <>
+                            <div className="switcher__section-label">Available to Add</div>
+                            {availableModels.map((model) => (
+                                <div key={model.id} className="switcher__item-wrap switcher__item-wrap--available">
+                                    <div className="switcher__item-info">
+                                        <span className="switcher__item-name">
+                                            {model.name}
+                                            {model.tier === 'cloud' && <span className="switcher__item-cloud-tag">Cloud</span>}
+                                            {model.tier === 'agent' && <span className="switcher__item-agent-tag">Bot</span>}
+                                        </span>
+                                        <span className="switcher__item-size">
+                                            {model.tier === 'cloud' || model.tier === 'agent' ? 'API Key' : `${model.sizeGB} GB`}
+                                        </span>
+                                    </div>
+                                    <button
+                                        className="switcher__item-action switcher__item-action--activate"
+                                        onClick={() => {
+                                            onOpenLibrary()
+                                            setIsOpen(false)
+                                        }}
+                                        id={`activate-${model.id}`}
+                                    >
+                                        {model.tier === 'local' ? 'Get' : 'Add'}
+                                    </button>
+                                </div>
+                            ))}
+                        </>
+                    )}
+
                     <div className="switcher__divider" />
                     <button
                         className="switcher__item switcher__item--library"
                         onClick={() => { onOpenLibrary(); setIsOpen(false) }}
                         id="switcher-open-library"
                     >
-                        📚 Browse Model Library
+                        📚 Full Model Library
                     </button>
                 </div>
             )}

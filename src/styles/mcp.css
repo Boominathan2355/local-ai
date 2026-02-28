@@ -6,7 +6,7 @@
     position: fixed;
     inset: 0;
     z-index: 2200;
-    /* Highest priority overlay */
+    /* Priority below Library but above Settings */
     background: rgba(0, 0, 0, 0.75);
     backdrop-filter: blur(12px);
     display: flex;
