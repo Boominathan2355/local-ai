@@ -4,28 +4,33 @@
 
 .mcp-overlay {
     position: fixed;
-    inset: 0;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     z-index: 2200;
     /* Priority below Library but above Settings */
-    background: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(12px);
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
     display: flex;
     align-items: center;
     justify-content: center;
-    animation: fadeIn 0.3s ease;
+    animation: fadeIn var(--transition-normal);
 }
 
 .mcp-container {
-    width: 90vw;
-    max-width: 900px;
-    height: 85vh;
-    background: var(--bg-secondary);
+    width: 800px;
+    max-width: 90%;
+    max-height: 85vh;
+    background: var(--surface-glass);
+    backdrop-filter: var(--surface-glass-blur);
     border: 1px solid var(--surface-glass-border);
-    border-radius: 20px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 25px 70px rgba(0, 0, 0, 0.6);
+    color: var(--text-primary);
 }
 
 .mcp__header {

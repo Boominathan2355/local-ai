@@ -1,4 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import '@fontsource/space-grotesk/300.css';
+import '@fontsource/space-grotesk/400.css';
+import '@fontsource/space-grotesk/500.css';
+import '@fontsource/space-grotesk/600.css';
+import '@fontsource/space-grotesk/700.css';
 
 import { ConversationSidebar } from './components/sidebar/ConversationSidebar'
 import { ChatWindow } from './components/chat/ChatWindow'
@@ -46,6 +51,11 @@ const App: React.FC = () => {
 
     const { status: modelStatus, isReady: modelReady } = useModelStatus()
     const { settings, updateSettings } = useSettings()
+
+    // Apply theme to document root
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', settings.theme || 'dark')
+    }, [settings.theme])
 
     // Check if setup is needed on mount, and fetch active model
     useEffect(() => {
