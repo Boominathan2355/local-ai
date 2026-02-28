@@ -47,7 +47,20 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
         return () => document.removeEventListener('mousedown', handleClick)
     }, [])
 
-    const readyModels = allModels.filter(m => {
+    // Filter models based on API key availability for cloud models
+    const filteredAllModels = allModels.filter(m => {
+        if (m.tier === 'local') return true;
+        if (!m.provider) return true; // Fallback for models without explicit provider
+
+        const provider = m.provider.toLowerCase();
+        if (provider.includes('openai')) return !!settings.apiKeys.openai;
+        if (provider.includes('anthropic')) return !!settings.apiKeys.anthropic;
+        if (provider.includes('google') || provider.includes('gemini')) return !!settings.apiKeys.google;
+
+        return true; // Default to showing if provider is unknown
+    });
+
+    const readyModels = filteredAllModels.filter(m => {
         if (m.downloaded) return true
         if (m.tier === 'cloud' || m.tier === 'agent') {
             return settings.activatedCloudModels.includes(m.id)
@@ -55,7 +68,12 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
         return false
     })
 
-    const availableModels = allModels.filter(m => !readyModels.find(rm => rm.id === m.id))
+    const availableModels = filteredAllModels.filter(m => !readyModels.find(rm => rm.id === m.id))
+
+    // List Limiting Logic (Max 5 total)
+    const MAX_ITEMS = 5;
+    const displayedReady = readyModels.slice(0, MAX_ITEMS);
+    const displayedAvailable = availableModels.slice(0, Math.max(0, MAX_ITEMS - displayedReady.length));
 
     const activeModel = readyModels.find((m) => m.id === activeModelId)
     const displayName = activeModel?.name ?? 'No Model Selected'
@@ -80,10 +98,10 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
             {isOpen && (
                 <div className="switcher__dropdown" id="switcher-dropdown">
                     {/* Ready Section */}
-                    {readyModels.length > 0 && (
+                    {displayedReady.length > 0 && (
                         <>
                             <div className="switcher__section-label">Ready to Use</div>
-                            {readyModels.map((model) => (
+                            {displayedReady.map((model) => (
                                 <div key={model.id} className={`switcher__item-wrap ${model.id === activeModelId ? 'switcher__item--active' : ''}`}>
                                     <div className="switcher__item-info">
                                         <span className="switcher__item-name">
@@ -113,10 +131,10 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
                     )}
 
                     {/* Available Section */}
-                    {availableModels.length > 0 && (
+                    {displayedAvailable.length > 0 && (
                         <>
                             <div className="switcher__section-label">Available to Add</div>
-                            {availableModels.map((model) => (
+                            {displayedAvailable.map((model) => (
                                 <div key={model.id} className="switcher__item-wrap switcher__item-wrap--available">
                                     <div className="switcher__item-info">
                                         <span className="switcher__item-name">
