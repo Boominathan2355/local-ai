@@ -3,6 +3,7 @@ export type ModelStatusType = 'loading' | 'ready' | 'generating' | 'error' | 'di
 export interface ModelStatus {
     status: ModelStatusType
     modelName: string | null
+    modelTier: string | null
     error: string | null
     tokensPerSecond: number | null
 }

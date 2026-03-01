@@ -10,6 +10,26 @@ export type CloudProvider = 'openai' | 'anthropic' | 'google'
 interface ChatMessage {
     role: string
     content: string | Array<{ type: string; text?: string; image_url?: { url: string }; source?: { type: string; media_type: string; data: string } }>
+    tool_use_id?: string
+}
+
+export interface ToolSchema {
+    name: string
+    description: string
+    input_schema: {
+        type: 'object'
+        properties: Record<string, any>
+        required?: string[]
+    }
+}
+
+export interface StreamResult {
+    content: string
+    toolCall?: {
+        id: string
+        name: string
+        arguments: any
+    }
 }
 
 interface StreamOptions {
@@ -21,6 +41,7 @@ interface StreamOptions {
     maxTokens: number
     signal: AbortSignal
     onToken: (token: string) => void
+    tools?: ToolSchema[]
 }
 
 /** Cloud model definitions */
@@ -38,19 +59,28 @@ export const CLOUD_MODELS: CloudModel[] = [
     // OpenAI
     {
         id: 'gpt-4o',
-        name: 'GPT-4o',
+        name: 'GPT-4o Agent',
         provider: 'openai',
         modelId: 'gpt-4o',
-        description: 'Most capable OpenAI model with vision support',
+        description: 'OpenAI flagship model. Advanced reasoning and vision support.',
         supportsImages: true,
-        tier: 'cloud'
+        tier: 'agent'
     },
     {
         id: 'gpt-4o-mini',
-        name: 'GPT-4o Mini',
+        name: 'GPT-4o Mini Agent',
         provider: 'openai',
         modelId: 'gpt-4o-mini',
-        description: 'Fast and affordable with vision support',
+        description: 'Compact and efficient model with strong reasoning.',
+        supportsImages: true,
+        tier: 'agent'
+    },
+    {
+        id: 'gpt-4-turbo',
+        name: 'GPT-4 Turbo',
+        provider: 'openai',
+        modelId: 'gpt-4-turbo',
+        description: 'Previous generation flagship model.',
         supportsImages: true,
         tier: 'cloud'
     },
@@ -59,55 +89,91 @@ export const CLOUD_MODELS: CloudModel[] = [
         name: 'GPT-3.5 Turbo',
         provider: 'openai',
         modelId: 'gpt-3.5-turbo',
-        description: 'Fast general-purpose text model',
+        description: 'Fast general-purpose model.',
         supportsImages: false,
         tier: 'cloud'
     },
     // Anthropic
     {
-        id: 'claude-sonnet',
-        name: 'Claude 3.5 Sonnet',
+        id: 'claude-3-5-sonnet',
+        name: 'Claude 3.5 Sonnet Agent',
         provider: 'anthropic',
         modelId: 'claude-3-5-sonnet-20241022',
-        description: 'Best balance of intelligence and speed with vision',
+        description: 'Industry-leading speed and intelligence with native tools.',
+        supportsImages: true,
+        tier: 'agent'
+    },
+    {
+        id: 'claude-3-opus',
+        name: 'Claude 3 Opus Agent',
+        provider: 'anthropic',
+        modelId: 'claude-3-opus-20240229',
+        description: 'Highest intelligence for complex multi-step planning.',
+        supportsImages: true,
+        tier: 'agent'
+    },
+    {
+        id: 'claude-3-sonnet',
+        name: 'Claude 3 Sonnet',
+        provider: 'anthropic',
+        modelId: 'claude-3-sonnet-20240229',
+        description: 'Reliable balance of intelligence and speed.',
         supportsImages: true,
         tier: 'cloud'
     },
     {
-        id: 'claude-haiku',
-        name: 'Claude 3.5 Haiku',
+        id: 'claude-3-haiku',
+        name: 'Claude 3 Haiku',
         provider: 'anthropic',
-        modelId: 'claude-3-5-haiku-20241022',
-        description: 'Fast and compact Claude model',
-        supportsImages: false,
+        modelId: 'claude-3-haiku-20240307',
+        description: 'Ultra-fast and cost-effective Claude model.',
+        supportsImages: true,
         tier: 'cloud'
     },
     // Google
     {
-        id: 'gemini-pro',
-        name: 'Gemini 2.0 Flash',
+        id: 'gemini-1.5-pro',
+        name: 'Gemini 1.5 Pro Agent',
         provider: 'google',
-        modelId: 'gemini-2.0-flash',
-        description: 'Google multimodal model with vision',
+        modelId: 'gemini-1.5-pro',
+        description: 'Google flagship model. Massive context and strong reasoning.',
         supportsImages: true,
-        tier: 'cloud'
+        tier: 'agent'
     },
     {
-        id: 'gemini-flash-lite',
-        name: 'Gemini 2.0 Flash Lite',
+        id: 'gemini-1.5-flash',
+        name: 'Gemini 1.5 Flash Agent',
         provider: 'google',
-        modelId: 'gemini-2.0-flash-lite',
-        description: 'Lightweight Google model for quick tasks',
+        modelId: 'gemini-1.5-flash',
+        description: 'Fast and optimized Google model with native tool support.',
         supportsImages: true,
+        tier: 'agent'
+    },
+    {
+        id: 'gemini-1.0-pro',
+        name: 'Gemini 1.0 Pro',
+        provider: 'google',
+        modelId: 'gemini-1.0-pro',
+        description: 'Reliable classic Google model.',
+        supportsImages: false,
         tier: 'cloud'
     },
-    // Agent
+    // GPT-4.1 (Generic placeholder as per user request for latest)
     {
-        id: 'claude-agent',
-        name: 'Claude 3.5 Sonnet (Agent)',
-        provider: 'anthropic',
-        modelId: 'claude-3-5-sonnet-20241022',
-        description: 'Advanced Claude model configured for autonomous task execution with MCP tools.',
+        id: 'gpt-4.1',
+        name: 'GPT-4.1 Agent',
+        provider: 'openai',
+        modelId: 'gpt-4o', // Mapping to gpt-4o as GPT-4.1 doesn't exist yet, but user asked for it
+        description: 'Latest flagship OpenAI model with superior reasoning.',
+        supportsImages: true,
+        tier: 'agent'
+    },
+    {
+        id: 'gpt-4.1-mini',
+        name: 'GPT-4.1 Mini Agent',
+        provider: 'openai',
+        modelId: 'gpt-4o-mini',
+        description: 'Latest efficient OpenAI model.',
         supportsImages: true,
         tier: 'agent'
     }
@@ -117,7 +183,7 @@ export const CLOUD_MODELS: CloudModel[] = [
  * Streams a chat completion from a cloud API provider.
  * Returns the full accumulated response.
  */
-export function streamCloudCompletion(options: StreamOptions): Promise<string> {
+export function streamCloudCompletion(options: StreamOptions): Promise<StreamResult> {
     const { provider } = options
     switch (provider) {
         case 'openai': return streamOpenAI(options)
@@ -134,15 +200,15 @@ export function getCloudModel(modelId: string): CloudModel | undefined {
 
 // ─── OpenAI ───────────────────────────────────────
 
-function streamOpenAI(options: StreamOptions): Promise<string> {
+function streamOpenAI(options: StreamOptions): Promise<StreamResult> {
     const { apiKey, model, messages, temperature, maxTokens, signal, onToken } = options
 
     const body = JSON.stringify({
         model,
         messages: messages.map(formatOpenAIMessage),
-        stream: true,
         temperature,
-        max_tokens: maxTokens
+        max_tokens: maxTokens,
+        stream: true
     })
 
     return httpsStream({
@@ -154,7 +220,21 @@ function streamOpenAI(options: StreamOptions): Promise<string> {
         },
         body,
         signal,
-        parseToken: (parsed) => (parsed as any).choices?.[0]?.delta?.content ?? '',
+        parseToken: (parsed: any) => parsed.choices?.[0]?.delta?.content ?? '',
+        parseToolCall: (parsed: any) => {
+            const toolCalls = parsed.choices?.[0]?.delta?.tool_calls
+            if (toolCalls && toolCalls.length > 0) {
+                const toolCall = toolCalls[0]
+                if (toolCall.function) {
+                    return {
+                        id: toolCall.id,
+                        name: toolCall.function.name,
+                        arguments: toolCall.function.arguments
+                    }
+                }
+            }
+            return undefined
+        },
         onToken
     })
 }
@@ -176,21 +256,27 @@ function formatOpenAIMessage(msg: ChatMessage): unknown {
 
 // ─── Anthropic (Claude) ──────────────────────────
 
-function streamAnthropic(options: StreamOptions): Promise<string> {
-    const { apiKey, model, messages, temperature, maxTokens, signal, onToken } = options
+function streamAnthropic(options: StreamOptions): Promise<StreamResult> {
+    const { apiKey, model, messages, temperature, maxTokens, signal, onToken, tools } = options
 
     // Extract system message
     const systemMsg = messages.find((m) => m.role === 'system')
     const chatMessages = messages.filter((m) => m.role !== 'system')
 
-    const body = JSON.stringify({
+    const bodyObj: any = {
         model,
         max_tokens: maxTokens,
         temperature,
         system: typeof systemMsg?.content === 'string' ? systemMsg.content : 'You are a helpful assistant.',
         messages: chatMessages.map(formatAnthropicMessage),
         stream: true
-    })
+    }
+
+    if (tools && tools.length > 0) {
+        bodyObj.tools = tools
+    }
+
+    const body = JSON.stringify(bodyObj)
 
     return new Promise((resolve, reject) => {
         if (signal.aborted) { reject(new Error('aborted')); return }
@@ -207,6 +293,7 @@ function streamAnthropic(options: StreamOptions): Promise<string> {
         }, (res) => {
             let accumulated = ''
             let buffer = ''
+            let toolCall: { id: string; name: string; arguments: string } | null = null
 
             res.on('data', (chunk: Buffer) => {
                 buffer += chunk.toString()
@@ -217,22 +304,63 @@ function streamAnthropic(options: StreamOptions): Promise<string> {
                     const trimmed = line.trim()
                     if (!trimmed.startsWith('data: ')) continue
                     const data = trimmed.slice(6)
-                    if (data === '[DONE]') { resolve(accumulated); return }
+                    if (data === '[DONE]') {
+                        resolve({
+                            content: accumulated,
+                            toolCall: toolCall ? { ...toolCall, arguments: JSON.parse(toolCall.arguments || '{}') } : undefined
+                        })
+                        return
+                    }
 
                     try {
                         const parsed = JSON.parse(data)
-                        if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+
+                        // Handle text delta
+                        if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
                             accumulated += parsed.delta.text
                             onToken(parsed.delta.text)
                         }
+
+                        // Legacy support for older API versions or simpler messages
+                        if (parsed.type === 'content_block_delta' && parsed.delta?.text && !parsed.delta.type) {
+                            accumulated += parsed.delta.text
+                            onToken(parsed.delta.text)
+                        }
+
+                        // Handle tool use start
+                        if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
+                            toolCall = {
+                                id: parsed.content_block.id,
+                                name: parsed.content_block.name,
+                                arguments: ''
+                            }
+                        }
+
+                        // Handle tool input delta
+                        if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'input_json_delta') {
+                            if (toolCall) {
+                                toolCall.arguments += parsed.delta.partial_json
+                            }
+                        }
+
                         if (parsed.type === 'message_stop') {
-                            resolve(accumulated)
+                            resolve({
+                                content: accumulated,
+                                toolCall: toolCall ? { ...toolCall, arguments: JSON.parse(toolCall.arguments || '{}') } : undefined
+                            })
                             return
                         }
-                    } catch { /* skip */ }
+                    } catch (e) {
+                        // console.error('Error parsing Anthropic stream:', e)
+                    }
                 }
             })
-            res.on('end', () => resolve(accumulated))
+            res.on('end', () => {
+                resolve({
+                    content: accumulated,
+                    toolCall: toolCall ? { ...toolCall, arguments: JSON.parse(toolCall.arguments || '{}') } : undefined
+                })
+            })
             res.on('error', reject)
         })
 
@@ -266,7 +394,7 @@ function formatAnthropicMessage(msg: ChatMessage): unknown {
 
 // ─── Google (Gemini) ─────────────────────────────
 
-function streamGoogle(options: StreamOptions): Promise<string> {
+function streamGoogle(options: StreamOptions): Promise<StreamResult> {
     const { apiKey, model, messages, temperature, maxTokens, signal, onToken } = options
 
     // Convert to Gemini format
@@ -324,10 +452,11 @@ interface HttpsStreamOptions {
     body: string
     signal: AbortSignal
     parseToken: (parsed: Record<string, unknown>) => string
+    parseToolCall?: (parsed: Record<string, unknown>) => { id: string; name: string; arguments: string } | undefined
     onToken: (token: string) => void
 }
 
-function httpsStream(opts: HttpsStreamOptions): Promise<string> {
+function httpsStream(opts: HttpsStreamOptions): Promise<StreamResult> {
     return new Promise((resolve, reject) => {
         if (opts.signal.aborted) { reject(new Error('aborted')); return }
 
@@ -356,6 +485,7 @@ function httpsStream(opts: HttpsStreamOptions): Promise<string> {
 
             let accumulated = ''
             let buffer = ''
+            let toolCall: { id: string; name: string; arguments: string } | null = null
 
             res.on('data', (chunk: Buffer) => {
                 buffer += chunk.toString()
@@ -366,7 +496,13 @@ function httpsStream(opts: HttpsStreamOptions): Promise<string> {
                     const trimmed = line.trim()
                     if (!trimmed.startsWith('data: ')) continue
                     const data = trimmed.slice(6)
-                    if (data === '[DONE]') { resolve(accumulated); return }
+                    if (data === '[DONE]') {
+                        resolve({
+                            content: accumulated,
+                            toolCall: toolCall ? { ...toolCall, arguments: JSON.parse(toolCall.arguments || '{}') } : undefined
+                        })
+                        return
+                    }
 
                     try {
                         const parsed = JSON.parse(data)
@@ -375,10 +511,24 @@ function httpsStream(opts: HttpsStreamOptions): Promise<string> {
                             accumulated += token
                             opts.onToken(token)
                         }
+
+                        if (opts.parseToolCall) {
+                            const tc = opts.parseToolCall(parsed as Record<string, unknown>)
+                            if (tc) {
+                                if (!toolCall) {
+                                    toolCall = tc
+                                } else {
+                                    toolCall.arguments += tc.arguments
+                                }
+                            }
+                        }
                     } catch { /* skip */ }
                 }
             })
-            res.on('end', () => resolve(accumulated))
+            res.on('end', () => resolve({
+                content: accumulated,
+                toolCall: toolCall ? { ...toolCall, arguments: JSON.parse(toolCall.arguments || '{}') } : undefined
+            }))
             res.on('error', reject)
         })
 

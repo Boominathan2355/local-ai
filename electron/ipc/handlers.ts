@@ -37,14 +37,14 @@ export function registerIpcHandlers(
     let activeModelId: string | null = initialModelId
 
     interface PermissionRequest {
-        resolve: (allowed: boolean) => void
+        resolve: (response: { allowed: boolean; always?: boolean }) => void
     }
     const permissionRequests = new Map<string, PermissionRequest>()
 
-    ipcMain.on(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_RESPONSE, (_event, requestId: string, allowed: boolean) => {
+    ipcMain.on(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_RESPONSE, (_event, requestId: string, response: { allowed: boolean; always?: boolean }) => {
         const request = permissionRequests.get(requestId)
         if (request) {
-            request.resolve(allowed)
+            request.resolve(response)
             permissionRequests.delete(requestId)
         }
     })
@@ -134,7 +134,7 @@ export function registerIpcHandlers(
             ramRequired: 0,
             url: '',
             filename: '',
-            tier: 'cloud' as any,
+            tier: m.tier as any,
             provider: m.provider,
             supportsImages: m.supportsImages,
             downloaded: true // Cloud models are always "ready"
@@ -143,11 +143,21 @@ export function registerIpcHandlers(
     })
 
     ipcMain.handle(IPC_CHANNELS.MODEL_GET_ACTIVE, () => {
-        const models = downloadService.getDownloadedModels()
+        const cloudModel = activeModelId ? getCloudModel(activeModelId) : undefined
+        if (cloudModel) {
+            return {
+                activeModelId,
+                activeModelName: cloudModel.name,
+                activeModelTier: cloudModel.tier
+            }
+        }
+
+        const models = downloadService.getAvailableModels()
         const activeModel = models.find(m => m.id === activeModelId)
         return {
             activeModelId,
-            activeModelName: activeModel?.name ?? null
+            activeModelName: activeModel?.name ?? null,
+            activeModelTier: activeModel?.tier ?? null
         }
     })
 
@@ -166,7 +176,12 @@ export function registerIpcHandlers(
         if (isCloud) {
             activeModelId = modelId
             const cloudModel = getCloudModel(modelId)
-            return { success: true, activeModelId, activeModelName: cloudModel?.name ?? modelId }
+            return {
+                success: true,
+                activeModelId,
+                activeModelName: cloudModel?.name ?? modelId,
+                activeModelTier: cloudModel?.tier ?? 'cloud'
+            }
         }
 
         const model = downloadService.getAvailableModels().find(m => m.id === modelId)
@@ -187,7 +202,12 @@ export function registerIpcHandlers(
 
         try {
             await llamaServer.start()
-            return { success: true, activeModelId, activeModelName: model?.name ?? null }
+            return {
+                success: true,
+                activeModelId,
+                activeModelName: model?.name ?? null,
+                activeModelTier: model?.tier ?? null
+            }
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to start server'
             return { error: message }
@@ -283,32 +303,56 @@ export function registerIpcHandlers(
                 const allServers = [...(settings.mcpServers || []), ...builtinServers]
                 const enabledServers = allServers.filter(s => s.enabled)
 
-                // Enhance system prompt with tool instructions if tools are available
-                let enhancedSystemPrompt = systemPrompt + `\n\nUser OS: linux\nWorking Directory: ${process.cwd()}`
-                const availableTools: any[] = []
-
-                for (const server of enabledServers) {
-                    const tools = await mcpService.listTools(server.id)
-                    availableTools.push(...tools.map(t => ({ ...t, serverId: server.id })))
+                // Determine model tier
+                let modelTier: string | null = null
+                if (cloudModel) {
+                    modelTier = cloudModel.tier
+                } else {
+                    const localModel = downloadService.getAvailableModels().find(m => m.id === activeModelId)
+                    modelTier = localModel?.tier ?? null
                 }
 
-                if (availableTools.length > 0) {
+                // Enhance system prompt with tool instructions if tools are available and model is an agent
+                const os = require('os')
+                const homeDir = os.homedir()
+                const projectPath = process.cwd()
+
+                let enhancedSystemPrompt = systemPrompt + `
+User OS: ${os.platform()} ${os.release()}
+Current Project Path: ${projectPath}
+User Home Directory: ${homeDir}
+Scope: You have **FULL SYSTEM ACCESS** via MCP tools. You can navigate, read, and write anywhere the user has permissions. 
+Terminal: You have multiple independent terminal sessions. Use create_terminal to start a new one and list_terminals to see active ones. Each terminal has its own virtual working directory.
+Always prefer using absolute paths when interacting with the filesystem outside the project directory.`
+                const availableTools: any[] = []
+
+                if (modelTier === 'agent') {
+                    for (const server of enabledServers) {
+                        const tools = await mcpService.listTools(server.id)
+                        availableTools.push(...tools.map(t => ({ ...t, serverId: server.id })))
+                    }
+                }
+
+                if (availableTools.length > 0 && modelTier === 'agent' && cloudModel?.provider !== 'anthropic') {
                     enhancedSystemPrompt += `
 
-## Model Context Protocol (MCP) Tools
+## Model Context Protocol (MCP) Tools [AGENT MODE]
 You have access to the following tools via MCP:
 ${availableTools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
 
-If a user request requires using these tools, you must respond ONLY in valid JSON using this format:
+To use a tool, you must respond ONLY with a JSON object in this fixed format:
 {
   "tool_call": {
-    "name": "<tool_name>",
-    "arguments": { ... }
+    "name": "tool_name",
+    "arguments": { "arg": "value" }
   }
 }
 
-Do NOT explain. Do NOT add text before or after JSON. Only call tools when necessary.
-After receiving tool results, you can use them to provide a final response or call more tools if needed.`
+CRITICAL RULES:
+1. DO NOT add any preamble, conversational text, or explanation before or after the JSON.
+2. Respond with ONLY the JSON block.
+3. If no tool is needed, respond with standard markdown text.
+4. Use tools only when necessary to fulfill the user request.`
                 }
 
                 let assistantContent = ''
@@ -356,11 +400,20 @@ After receiving tool results, you can use them to provide a final response or ca
                             }
                         }
 
-                        assistantContent = await streamCloudCompletion({
+                        const cloudTools = cloudModel.provider === 'anthropic' && modelTier === 'agent'
+                            ? availableTools.map(t => ({
+                                name: t.name,
+                                description: t.description,
+                                input_schema: (t as any).inputSchema || { type: 'object', properties: {} }
+                            }))
+                            : undefined
+
+                        const result = await streamCloudCompletion({
                             provider: cloudModel.provider,
                             apiKey,
                             model: cloudModel.modelId,
                             messages: messages as any,
+                            tools: cloudTools,
                             temperature: settings.temperature,
                             maxTokens: settings.maxTokens,
                             signal: activeAbortController.signal,
@@ -372,6 +425,16 @@ After receiving tool results, you can use them to provide a final response or ca
                                 })
                             }
                         })
+                        assistantContent = result.content
+                        if (result.toolCall) {
+                            // Map native tool call to our format
+                            assistantContent = JSON.stringify({
+                                tool_call: {
+                                    name: result.toolCall.name,
+                                    arguments: result.toolCall.arguments
+                                }
+                            })
+                        }
                     } else {
                         // Local llama flow
                         const messages = [
@@ -389,16 +452,34 @@ After receiving tool results, you can use them to provide a final response or ca
                                     token,
                                     done: false
                                 })
-                            }
+                            },
+                            ["<|user|>", "<|assistant|>", "user:", "assistant:", "### User:", "### Assistant:"],
+                            settings.temperature,
+                            settings.maxTokens
                         )
                     }
 
                     // Check for tool call
                     let toolCallMatch = null
                     try {
-                        const parsed = JSON.parse(assistantContent.trim())
-                        if (parsed.tool_call) {
-                            toolCallMatch = parsed.tool_call
+                        const trimmedStr = assistantContent.trim()
+                        // Robust JSON extraction to handle echoed prompt text or reasoning before JSON
+                        const startIdx = trimmedStr.indexOf('{')
+                        const endIdx = trimmedStr.lastIndexOf('}')
+
+                        if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+                            const jsonStr = trimmedStr.slice(startIdx, endIdx + 1)
+                            const parsed = JSON.parse(jsonStr)
+                            if (parsed.tool_call) {
+                                toolCallMatch = parsed.tool_call
+                                // Update assistantContent to be the clean JSON if it was found embedded
+                                assistantContent = jsonStr
+                            }
+                        } else {
+                            // If no JSON found, try to strip common echoed triggers
+                            assistantContent = assistantContent
+                                .replace(/^(user:|assistant:|### User:|### Assistant:|<\|user\|>|<\|assistant\|>)\s*/i, '')
+                                .trim()
                         }
                     } catch {
                         // Not a JSON tool call
@@ -425,17 +506,47 @@ After receiving tool results, you can use them to provide a final response or ca
                                 window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: assistantMsg })
                                 window.webContents.send(IPC_CHANNELS.CHAT_STREAM_COMPLETE, { conversationId, toolCall: true })
 
-                                // 2. Ask for permission
-                                const requestId = generateId()
-                                window.webContents.send(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_REQUESTED, {
-                                    requestId,
-                                    toolName: name,
-                                    arguments: toolArgs
-                                })
+                                // 2. Ask for permission (check if already allowed always)
+                                const isAllowedAlways = (settings.allowedTools || []).includes(name)
+                                let allowed = isAllowedAlways
+                                let always = false
 
-                                const allowed = await new Promise<boolean>((resolve) => {
-                                    permissionRequests.set(requestId, { resolve })
-                                })
+                                // Tier-based security logic
+                                const toolTier = (toolDef as any).tier || 'restricted'
+
+                                if (toolTier === 'safe') {
+                                    allowed = true
+                                } else if (toolTier === 'restricted' && modelTier === 'agent') {
+                                    allowed = true
+                                } else if (toolTier === 'dangerous') {
+                                    // Dangerous tools ALWAYS prompt, ignore Always Allowed
+                                    allowed = false
+                                }
+
+                                if (!allowed) {
+                                    const requestId = generateId()
+                                    window.webContents.send(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_REQUESTED, {
+                                        requestId,
+                                        toolName: name,
+                                        arguments: toolArgs,
+                                        tier: toolTier // Pass tier to UI
+                                    })
+
+                                    const response = await new Promise<{ allowed: boolean; always?: boolean }>((resolve) => {
+                                        permissionRequests.set(requestId, { resolve })
+                                    })
+                                    allowed = response.allowed
+                                    always = response.always || false
+
+                                    // If "Allow Always", save to settings (Dangerous tools can't be always allowed)
+                                    if (allowed && always && toolTier !== 'dangerous') {
+                                        const currentAllowed = settings.allowedTools || []
+                                        if (!currentAllowed.includes(name)) {
+                                            settings.allowedTools = [...currentAllowed, name]
+                                            await storage.setSettings({ allowedTools: settings.allowedTools })
+                                        }
+                                    }
+                                }
 
                                 if (!allowed) {
                                     const toolResultMsg: ChatMessage = {
@@ -452,11 +563,11 @@ After receiving tool results, you can use them to provide a final response or ca
                                     continue
                                 }
 
-                                // 3. Call the tool (might take time)
+                                // 3. Call the tool
                                 const result = await mcpService.callTool(toolDef.serverId, name, toolArgs)
                                 const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
 
-                                // 3. Save tool result and notify
+                                // 4. Save tool result and notify
                                 const toolResultMsg: ChatMessage = {
                                     id: generateId(),
                                     conversationId,
@@ -469,27 +580,42 @@ After receiving tool results, you can use them to provide a final response or ca
                                 window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: toolResultMsg })
 
                                 toolLoops++
-                                continue // Loop back to model with tool result
+                                continue // LOOP BACK! The model will now see the tool result in getRollingContext
                             } catch (err) {
                                 assistantContent = `Error calling tool ${name}: ${err instanceof Error ? err.message : String(err)}`
                             }
                         }
                     }
 
-                    break // Exit loop if no tool call or error
+                    // If we reach here, it means NO tool call was detected in the last response.
+                    // This is our FINAL response. Save it and break.
+                    const assistantMessage: ChatMessage = {
+                        id: generateId(),
+                        conversationId,
+                        role: 'assistant',
+                        content: assistantContent,
+                        tokenCount: estimateTokens(assistantContent),
+                        createdAt: Date.now()
+                    }
+                    storage.addMessage(assistantMessage)
+                    window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: assistantMessage })
+                    window.webContents.send(IPC_CHANNELS.CHAT_STREAM_COMPLETE, { conversationId })
+                    return { success: true }
                 }
 
-                // Save assistant message
-                const assistantMessage: ChatMessage = {
-                    id: generateId(),
-                    conversationId,
-                    role: 'assistant',
-                    content: assistantContent,
-                    tokenCount: estimateTokens(assistantContent),
-                    createdAt: Date.now()
+                // If loop limit reached
+                if (toolLoops >= MAX_TOOL_LOOPS) {
+                    const finalMsg: ChatMessage = {
+                        id: generateId(),
+                        conversationId,
+                        role: 'assistant',
+                        content: "Reached maximum tool execution limit.",
+                        tokenCount: 10,
+                        createdAt: Date.now()
+                    }
+                    storage.addMessage(finalMsg)
+                    window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: finalMsg })
                 }
-                storage.addMessage(assistantMessage)
-                window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: assistantMessage })
 
                 window.webContents.send(IPC_CHANNELS.CHAT_STREAM_COMPLETE, { conversationId })
                 return { success: true }
@@ -647,7 +773,10 @@ function streamCompletion(
     baseUrl: string,
     messages: Array<{ role: string; content: string }>,
     signal: AbortSignal,
-    onToken: (token: string) => void
+    onToken: (token: string) => void,
+    stop: string[] = [],
+    temperature = 0.7,
+    maxTokens = 1024
 ): Promise<string> {
     return new Promise((resolve, reject) => {
         if (signal.aborted) {
@@ -658,9 +787,10 @@ function streamCompletion(
         const body = JSON.stringify({
             messages,
             stream: true,
-            temperature: 0.7,
+            temperature,
             top_p: 0.9,
-            max_tokens: 1024
+            max_tokens: maxTokens,
+            stop
         })
 
         const url = new URL('/v1/chat/completions', baseUrl)

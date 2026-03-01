@@ -41,11 +41,69 @@
     font-weight: 600;
 }
 
+.chat__status-pill--agent {
+    background: rgba(124, 58, 237, 0.15);
+    color: #7c3aed;
+    border: 1px solid rgba(124, 58, 237, 0.3);
+}
+
 .chat__status-dot {
     width: 6px;
     height: 6px;
     background: var(--status-ready);
     border-radius: 50%;
+}
+
+.chat__status-dot--pulsing {
+    background: #7c3aed;
+    box-shadow: 0 0 8px #7c3aed;
+    animation: agent-pulse 2s infinite;
+}
+
+@keyframes agent-pulse {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+        box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.7);
+    }
+
+    70% {
+        transform: scale(1.2);
+        opacity: 0.8;
+        box-shadow: 0 0 0 10px rgba(124, 58, 237, 0);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+        box-shadow: 0 0 0 0 rgba(124, 58, 237, 0);
+    }
+}
+
+.chat__header--agent {
+    background: linear-gradient(to right, rgba(124, 58, 237, 0.05), var(--bg-primary));
+    border-bottom: 1px solid rgba(124, 58, 237, 0.2);
+}
+
+.chat__status-text {
+    letter-spacing: 0.05em;
+}
+
+.chat__agent-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.chat__agent-badge span {
+    color: var(--text-tertiary);
 }
 
 .chat__header-right {
@@ -1088,6 +1146,54 @@
     border-color: rgba(239, 68, 68, 0.5);
 }
 
+.tool-permission__allow-group {
+    display: flex;
+    gap: 8px;
+}
+
+.tool-permission__btn--always {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--accent-primary);
+    color: white;
+    border: none;
+    box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.3);
+}
+
+.tool-permission__btn--always:hover {
+    background: var(--accent-secondary);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(var(--accent-rgb), 0.4);
+}
+
+.tool-permission__btn--always .double-check {
+    animation: double-pulse 2s infinite;
+}
+
+@keyframes double-pulse {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.7;
+        transform: scale(1.1);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
 /* Assistant Tool Call Styles */
 .message__tool-call {
     background: var(--bg-secondary);
@@ -1143,6 +1249,44 @@
     font-size: 14px;
     color: var(--accent-primary);
     margin-bottom: 8px;
+}
+
+.library__card-active {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: var(--accent-primary);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* Agent Support Badge */
+.library__card-badge--agent {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: #ff3d00;
+    background: rgba(255, 61, 0, 0.1);
+    padding: 2px 6px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 61, 0, 0.2);
+    width: fit-content;
+}
+
+.library__btn--agent {
+    background: #ff3d00 !important;
+    border-color: #ff3d00 !important;
+    color: white !important;
+}
+
+.library__btn--agent:hover {
+    background: #ff5722 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 61, 0, 0.3);
 }
 
 .message__tool-call-args {

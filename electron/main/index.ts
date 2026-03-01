@@ -101,7 +101,12 @@ function initServices(): void {
         }
     })
 
-    mcpService = new McpService()
+    if (storage) {
+        mcpService = new McpService(storage)
+    } else {
+        // Fallback or early error handling
+        mcpService = new McpService(new StorageService())
+    }
 
     registerIpcHandlers(llamaServer, storage, systemMonitor, downloadService, mcpService, initialModelId)
 

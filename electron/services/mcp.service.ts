@@ -5,6 +5,8 @@ import { EventEmitter } from 'events'
 import { McpServer } from '../../src/types/settings.types'
 import { FilesystemMcpService } from './filesystem-mcp.service'
 import { TerminalMcpService } from './terminal-mcp.service'
+import { DesktopCommanderMcpService } from './desktop-commander-mcp.service'
+import { StorageService } from './storage.service'
 
 interface ConnectedServer {
     config: McpServer
@@ -19,14 +21,17 @@ export class McpService extends EventEmitter {
     private connectedServers: Map<string, ConnectedServer> = new Map()
     private filesystemMcp = new FilesystemMcpService()
     private terminalMcp = new TerminalMcpService()
+    private desktopCommanderMcp: DesktopCommanderMcpService
 
     private readonly BUILTIN_SERVERS = {
         filesystem: { id: 'builtin-filesystem', name: 'Filesystem (Built-in)', enabled: true },
-        terminal: { id: 'builtin-terminal', name: 'Terminal (Built-in)', enabled: true }
+        terminal: { id: 'builtin-terminal', name: 'Terminal (Built-in)', enabled: true },
+        desktopCommander: { id: 'builtin-commander', name: 'Desktop Commander (Built-in)', enabled: true }
     }
 
-    constructor() {
+    constructor(storage: StorageService) {
         super()
+        this.desktopCommanderMcp = new DesktopCommanderMcpService(storage)
     }
 
     /**
@@ -101,20 +106,23 @@ export class McpService extends EventEmitter {
     /**
      * Lists tools for a connected server.
      */
-    async listTools(serverId: string) {
-        if (serverId === this.BUILTIN_SERVERS.filesystem.id) {
-            return this.filesystemMcp.getTools()
-        }
-        if (serverId === this.BUILTIN_SERVERS.terminal.id) {
-            return this.terminalMcp.getTools()
-        }
+    async listTools(serverId: string): Promise<any[]> {
+        // Built-in servers
+        if (serverId === this.BUILTIN_SERVERS.terminal.id) return this.terminalMcp.getTools()
+        if (serverId === this.BUILTIN_SERVERS.filesystem.id) return this.filesystemMcp.getTools()
+        if (serverId === this.BUILTIN_SERVERS.desktopCommander.id) return this.desktopCommanderMcp.getTools()
 
+        // External servers
         const connected = this.connectedServers.get(serverId)
-        if (!connected) return []
+        if (!connected) throw new Error(`MCP Client not found for server: ${serverId}`)
 
         try {
             const response = await connected.client.listTools()
-            return response.tools || []
+            // Ensure every tool has a tier, defaulting to 'restricted' for unknown external tools
+            return (response.tools || []).map((tool: any) => ({
+                ...tool,
+                tier: tool.tier || 'restricted'
+            }))
         } catch (error) {
             console.error(`Error listing tools for MCP server ${serverId}:`, error)
             return []
@@ -127,23 +135,84 @@ export class McpService extends EventEmitter {
     async callTool(serverId: string, toolName: string, args: any): Promise<any> {
         // Handle built-in filesystem tools
         if (serverId === this.BUILTIN_SERVERS.filesystem.id) {
+            this.desktopCommanderMcp.recordToolCall({ serverId, toolName, args })
             switch (toolName) {
                 case 'read_file': return this.filesystemMcp.readFile(args.path)
                 case 'write_file': return this.filesystemMcp.writeFile(args.path, args.content)
                 case 'list_directory': return this.filesystemMcp.listDirectory(args.path)
                 case 'create_directory': return this.filesystemMcp.createDirectory(args.path)
                 case 'delete_file': return this.filesystemMcp.deleteFile(args.path)
+                case 'read_multiple_files': return this.filesystemMcp.readMultipleFiles(args.paths)
+                case 'move_file': return this.filesystemMcp.moveFile(args.source, args.destination)
+                case 'edit_block': return this.filesystemMcp.editBlock(args.path, args.find, args.replace)
+                case 'get_file_info': return this.filesystemMcp.getFileInfo(args.path)
+                case 'write_pdf': return this.filesystemMcp.writePdf(args.path, args.content)
                 default: throw new Error(`Unknown filesystem tool: ${toolName}`)
             }
         }
 
         // Handle built-in terminal tools
         if (serverId === this.BUILTIN_SERVERS.terminal.id) {
+            this.desktopCommanderMcp.recordToolCall({ serverId, toolName, args })
+            const tid = args.terminalId // Can be undefined, service defaults to 'default'
             switch (toolName) {
-                case 'execute_command': return this.terminalMcp.executeCommand(args.command)
+                case 'create_terminal':
+                    return this.terminalMcp.createTerminal(args.terminalId)
+                case 'list_terminals':
+                    return this.terminalMcp.listTerminals()
+                case 'close_terminal':
+                    return this.terminalMcp.closeTerminal(args.terminalId)
+                case 'execute_command':
+                case 'run_command':
+                    return this.terminalMcp.executeCommand(args.command, tid)
+                case 'change_directory':
+                    return this.terminalMcp.changeDirectory(args.path, tid)
+                case 'get_current_working_directory':
+                    return this.terminalMcp.getCurrentWorkingDirectory(tid)
+                case 'get_terminal_usage_stats':
+                    return this.terminalMcp.getTerminalUsageStats(tid)
+                case 'list_active_processes':
+                    return this.terminalMcp.listActiveProcesses(tid)
+                case 'read_process_output':
+                    return this.terminalMcp.readProcessOutput(args.processId, tid)
+                case 'start_process':
+                    return this.terminalMcp.startProcess(args.command, args.args, tid)
+                case 'terminate_process':
+                    return this.terminalMcp.terminateProcess(args.processId, tid)
+                case 'run_script':
+                    return this.terminalMcp.runScript(args.scriptPath, tid)
+                case 'set_environment_variable':
+                    return this.terminalMcp.setEnvironmentVariable(args.key, args.value)
                 default: throw new Error(`Unknown terminal tool: ${toolName}`)
             }
         }
+
+        // Handle Desktop Commander tools
+        if (serverId === this.BUILTIN_SERVERS.desktopCommander.id) {
+            this.desktopCommanderMcp.recordToolCall({ serverId, toolName, args })
+            switch (toolName) {
+                case 'get_config': return this.desktopCommanderMcp.getConfig()
+                case 'set_config_value': return this.desktopCommanderMcp.setConfigValue(args.key, args.value)
+                case 'start_search': return this.desktopCommanderMcp.startSearch(args.query, args.rootDir)
+                case 'get_more_search_results': return this.desktopCommanderMcp.getMoreSearchResults(args.searchId)
+                case 'stop_search': return this.desktopCommanderMcp.stopSearch(args.searchId)
+                case 'list_searches': return this.desktopCommanderMcp.listSearches()
+                case 'start_process': return this.desktopCommanderMcp.startProcess(args.command, args.args)
+                case 'read_process_output': return this.desktopCommanderMcp.readProcessOutput(args.processId)
+                case 'interact_with_process': return this.desktopCommanderMcp.interactWithProcess(args.processId, args.input)
+                case 'kill_process': return this.desktopCommanderMcp.killProcess(args.processId)
+                case 'force_terminate': return this.desktopCommanderMcp.killProcess(args.processId)
+                case 'list_processes': return this.desktopCommanderMcp.listProcesses()
+                case 'get_usage_stats': return this.desktopCommanderMcp.getUsageStats()
+                case 'list_sessions': return this.desktopCommanderMcp.listSessions()
+                case 'get_recent_tool_calls': return this.desktopCommanderMcp.getRecentToolCalls()
+                case 'give_feedback_to_desktop_commander': return this.desktopCommanderMcp.giveFeedbackToDesktopCommander(args.feedback)
+                case 'get_prompts': return this.desktopCommanderMcp.getPrompts()
+                default: throw new Error(`Unknown commander tool: ${toolName}`)
+            }
+        }
+
+        this.desktopCommanderMcp.recordToolCall({ serverId, toolName, args })
 
         const connected = this.connectedServers.get(serverId)
         if (!connected) throw new Error(`Server ${serverId} not connected`)

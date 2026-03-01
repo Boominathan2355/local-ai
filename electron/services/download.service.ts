@@ -160,11 +160,71 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
     {
         id: 'codestral-agent',
         name: 'Codestral Agent',
-        description: 'Mistral\'s specialized agent for coding tasks with MCP tool support.',
+        description: 'Mistral\'s specialized model for coding tasks. Optimized for high-quality tool execution.',
         sizeGB: 11.2,
         ramRequired: 24,
         url: 'https://huggingface.co/bartowski/Codestral-22B-v0.1-GGUF/resolve/main/Codestral-22B-v0.1-Q4_K_M.gguf',
         filename: 'Codestral-22B-v0.1-Q4_K_M.gguf',
+        tier: 'agent'
+    },
+    {
+        id: 'qwen2.5-7b-agent',
+        name: 'Qwen2.5 7B Agent',
+        description: 'Stable and reliable agent for precise filesystem operations and MCP tool control.',
+        sizeGB: 4.7,
+        ramRequired: 12,
+        url: 'https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+        filename: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+        tier: 'agent'
+    },
+    {
+        id: 'deepseek-v2-lite-agent',
+        name: 'DeepSeek-V2 Lite Agent',
+        description: 'Multi-tool reasoning expert. Efficient MoE architecture for stable agentic flows.',
+        sizeGB: 9.5,
+        ramRequired: 16,
+        url: 'https://huggingface.co/bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF/resolve/main/DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf',
+        filename: 'DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf',
+        tier: 'agent'
+    },
+    {
+        id: 'yi-1.5-9b-agent',
+        name: 'Yi-1.5 9B Agent',
+        description: 'Enhanced reasoning capabilities for multi-step logical tasks and planning.',
+        sizeGB: 5.4,
+        ramRequired: 16,
+        url: 'https://huggingface.co/bartowski/Yi-1.5-9B-Chat-GGUF/resolve/main/Yi-1.5-9B-Chat-Q4_K_M.gguf',
+        filename: 'Yi-1.5-9B-Chat-Q4_K_M.gguf',
+        tier: 'agent'
+    },
+    {
+        id: 'llama-3.1-8b-agent',
+        name: 'Llama 3.1 8B Agent',
+        description: 'Most versatile open-source agent model. High context awareness and logic.',
+        sizeGB: 4.9,
+        ramRequired: 12,
+        url: 'https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
+        filename: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
+        tier: 'agent'
+    },
+    {
+        id: 'deepseek-coder-6.7b-agent',
+        name: 'DeepSeek-Coder 6.7B Agent',
+        description: 'Coding-heavy automation specialist. Optimized for deep repo analysis and refactoring.',
+        sizeGB: 4.1,
+        ramRequired: 12,
+        url: 'https://huggingface.co/TheBloke/deepseek-coder-6.7B-instruct-GGUF/resolve/main/deepseek-coder-6.7b-instruct.Q4_K_M.gguf',
+        filename: 'deepseek-coder-6.7b-instruct.Q4_K_M.gguf',
+        tier: 'agent'
+    },
+    {
+        id: 'phi-3-mini-agent',
+        name: 'Phi-3 Mini Agent',
+        description: 'Lightweight and ultra-fast Microsoft model. Powerful reasoning for its size.',
+        sizeGB: 2.3,
+        ramRequired: 8,
+        url: 'https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf',
+        filename: 'Phi-3-mini-4k-instruct-Q4_K_M.gguf',
         tier: 'agent'
     }
 ]

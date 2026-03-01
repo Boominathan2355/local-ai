@@ -32,6 +32,8 @@ export interface AppSettings {
     activatedCloudModels: string[]
     /** Registered MCP servers */
     mcpServers: McpServer[]
+    /** Tools that are always allowed to run without parity per-call permission */
+    allowedTools: string[]
 }
 
 export const DEFAULT_SYSTEM_PROMPT = `You are a helpful, knowledgeable AI assistant running locally on the user's machine. You provide clear, accurate, and thoughtful responses. You are private, offline, and secure.`
@@ -70,5 +72,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
             enabled: false,
             status: 'connected'
         }
-    ]
+    ],
+    allowedTools: []
 }

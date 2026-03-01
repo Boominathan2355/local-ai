@@ -70,6 +70,14 @@
     border-bottom: 1px solid var(--border-subtle);
     flex-shrink: 0;
     background: var(--bg-secondary);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+}
+
+.capacity__group {
+    display: flex;
+    flex-direction: column;
 }
 
 .capacity__stats {
@@ -100,6 +108,11 @@
     background: var(--accent-primary);
     border-radius: 3px;
     transition: width 0.5s ease;
+}
+
+.capacity__bar-fill--disk {
+    background: #0ea5e9;
+    /* Sky blue for disk */
 }
 
 .capacity__bar-label {

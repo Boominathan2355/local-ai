@@ -15,7 +15,7 @@ interface UseChatReturn {
     retryMessage: (messageId: string) => void
     resendLastMessage: () => void
     pendingToolCall: { requestId: string; toolName: string; arguments: any } | null
-    respondToToolCall: (allowed: boolean) => void
+    respondToToolCall: (allowed: boolean, always?: boolean) => void
 }
 
 /**
@@ -193,11 +193,11 @@ export function useChat(conversationId: string | null): UseChatReturn {
 
     const clearError = useCallback(() => setError(null), [])
 
-    const respondToToolCall = useCallback((allowed: boolean) => {
+    const respondToToolCall = useCallback((allowed: boolean, always?: boolean) => {
         if (!pendingToolCall) return
         const api = getLocalAI()
         if (api) {
-            api.chat.respondToToolCallPermission(pendingToolCall.requestId, allowed)
+            api.chat.respondToToolCallPermission(pendingToolCall.requestId, { allowed, always })
             setPendingToolCall(null)
         }
     }, [pendingToolCall])

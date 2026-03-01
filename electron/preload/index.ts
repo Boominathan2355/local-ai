@@ -15,7 +15,7 @@ export interface LocalAIApi {
         onStreamComplete: (callback: (data: { conversationId: string; toolCall?: boolean }) => void) => () => void
         onStreamError: (callback: (data: { conversationId: string; error: string }) => void) => () => void
         onToolCallPermissionRequested: (callback: (data: { requestId: string; toolName: string; arguments: any }) => void) => () => void
-        respondToToolCallPermission: (requestId: string, allowed: boolean) => void
+        respondToToolCallPermission: (requestId: string, response: { allowed: boolean; always?: boolean }) => Promise<void>
     }
     conversations: {
         list: () => Promise<Conversation[]>
@@ -42,7 +42,7 @@ export interface LocalAIApi {
         importData: (jsonString: string) => Promise<{ success: boolean }>
     }
     system: {
-        getInfo: () => Promise<{ totalRamMB: number; freeRamMB: number; cpuCores: number; diskFreeGB: number }>
+        getInfo: () => Promise<{ totalRamMB: number; freeRamMB: number; cpuCores: number; diskFreeGB: number; diskTotalGB: number }>
     }
     download: {
         getModels: (options?: { includeCloud?: boolean }) => Promise<Array<{ id: string; name: string; description: string; sizeGB: number; ramRequired: number; tier: string; filename: string; downloaded: boolean }>>
@@ -92,10 +92,12 @@ const api: LocalAIApi = {
             createListener(IPC_CHANNELS.CHAT_STREAM_COMPLETE, callback),
         onStreamError: (callback) =>
             createListener(IPC_CHANNELS.CHAT_STREAM_ERROR, callback),
-        onToolCallPermissionRequested: (callback) =>
-            createListener(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_REQUESTED, callback),
-        respondToToolCallPermission: (requestId, allowed) =>
-            ipcRenderer.send(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_RESPONSE, requestId, allowed)
+        onToolCallPermissionRequested: (callback) => {
+            const listener = (_event: any, data: any) => callback(data)
+            ipcRenderer.on(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_REQUESTED, listener)
+            return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_REQUESTED, listener)
+        },
+        respondToToolCallPermission: (requestId, response) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_RESPONSE, requestId, response)
     },
     conversations: {
         list: () => ipcRenderer.invoke(IPC_CHANNELS.CONVERSATION_LIST),

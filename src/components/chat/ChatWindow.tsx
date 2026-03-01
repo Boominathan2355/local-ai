@@ -46,8 +46,9 @@ interface ChatWindowProps {
     onRetryMessage: (id: string) => void
     onResendLast: () => void
     pendingToolCall: { requestId: string; toolName: string; arguments: any } | null
-    onRespondToToolCall: (allowed: boolean) => void
+    onRespondToToolCall: (allowed: boolean, always?: boolean) => void
     activeModelName?: string | null
+    activeModelTier?: string | null
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -67,7 +68,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     onResendLast,
     pendingToolCall,
     onRespondToToolCall,
-    activeModelName
+    activeModelName,
+    activeModelTier
 }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -80,6 +82,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
     const provider: ApiProvider = activeModel.includes('gpt') ? 'openai' :
         (activeModel.includes('claude') || activeModel.includes('sonnet') || activeModel.includes('haiku')) ? 'anthropic' : 'google'
+
+    const isAgentMode = activeModelTier === 'agent'
 
     // Auto-scroll to bottom on new messages or streaming
     useEffect(() => {
@@ -100,7 +104,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
     return (
         <main className="chat" id="chat-window">
-            <div className="chat__header">
+            <div className={`chat__header ${isAgentMode ? 'chat__header--agent' : ''}`}>
                 <div className="chat__header-left">
                     <ModelSwitcher
                         activeModelId={activeModelId}
@@ -109,11 +113,26 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                         modelStatus={modelStatus}
                         settings={settings}
                     />
-                    <div className="chat__status-pill">
-                        <span className="chat__status-dot"></span>
-                        <span>Active</span>
-                    </div>
+                    {isAgentMode ? (
+                        <div className="chat__status-pill chat__status-pill--agent">
+                            <span className="chat__status-dot chat__status-dot--pulsing"></span>
+                            <span className="chat__status-text">AGENT MODE ACTIVE</span>
+                        </div>
+                    ) : (
+                        <div className="chat__status-pill">
+                            <span className="chat__status-dot"></span>
+                            <span>Active</span>
+                        </div>
+                    )}
                 </div>
+                {isAgentMode && (
+                    <div className="chat__header-right">
+                        <div className="chat__agent-badge">
+                            <Terminal size={14} />
+                            <span>Intelligence Tier: Advanced</span>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {needsApiKey ? (
@@ -209,7 +228,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                             <ToolCallPermission
                                 toolName={pendingToolCall.toolName}
                                 args={pendingToolCall.arguments}
-                                onAllow={() => onRespondToToolCall(true)}
+                                onAllow={(always) => onRespondToToolCall(true, always)}
                                 onDeny={() => onRespondToToolCall(false)}
                             />
                         )}

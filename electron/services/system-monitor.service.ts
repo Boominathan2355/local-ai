@@ -15,6 +15,7 @@ export interface SystemInfo {
     freeRamMB: number
     cpuCores: number
     diskFreeGB: number
+    diskTotalGB: number
 }
 
 /**
@@ -54,18 +55,23 @@ export class SystemMonitorService {
         const cpuCores = os.cpus().length
 
         let diskFreeGB = 0
+        let diskTotalGB = 0
         try {
             const dir = llamaDir ?? os.homedir()
-            const output = execSync(`df -BG "${dir}" | tail -1 | awk '{print $4}'`, {
+            // Column 2 is total, Column 4 is available
+            const output = execSync(`df -BG "${dir}" | tail -1 | awk '{print $2 " " $4}'`, {
                 encoding: 'utf-8',
                 timeout: 3000
             }).trim()
-            diskFreeGB = parseFloat(output.replace('G', '')) || 0
+            const [total, free] = output.split(/\s+/).map(v => parseFloat(v.replace('G', '')) || 0)
+            diskTotalGB = total
+            diskFreeGB = free
         } catch {
             diskFreeGB = 0
+            diskTotalGB = 0
         }
 
-        return { totalRamMB, freeRamMB, cpuCores, diskFreeGB }
+        return { totalRamMB, freeRamMB, cpuCores, diskFreeGB, diskTotalGB }
     }
 
     /**

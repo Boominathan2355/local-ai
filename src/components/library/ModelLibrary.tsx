@@ -22,6 +22,7 @@ interface SystemInfo {
     freeRamMB: number
     cpuCores: number
     diskFreeGB: number
+    diskTotalGB: number
 }
 
 interface DownloadProgress {
@@ -257,24 +258,38 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
 
                     {systemInfo && (
                         <div className="library__capacity">
-                            <div className="capacity__stats">
-                                <span className="capacity__item">
-                                    <strong>RAM:</strong> {totalRamGB} GB total · {freeRamGB} GB free
-                                </span>
-                                <span className="capacity__item">
-                                    <strong>CPU:</strong> {systemInfo.cpuCores} cores
-                                </span>
-                                <span className="capacity__item">
-                                    <strong>Disk:</strong> {systemInfo.diskFreeGB.toFixed(0)} GB free
-                                </span>
+                            <div className="capacity__group">
+                                <div className="capacity__stats">
+                                    <span className="capacity__item">
+                                        <strong>RAM:</strong> {totalRamGB} GB total · {freeRamGB} GB free
+                                    </span>
+                                    <span className="capacity__item">
+                                        <strong>CPU:</strong> {systemInfo.cpuCores} cores
+                                    </span>
+                                </div>
+                                <div className="capacity__bar">
+                                    <div
+                                        className="capacity__bar-fill"
+                                        style={{ width: `${Math.min(100, ((systemInfo.totalRamMB - systemInfo.freeRamMB) / systemInfo.totalRamMB) * 100)}%` }}
+                                    />
+                                </div>
+                                <div className="capacity__bar-label">RAM Usage</div>
                             </div>
-                            <div className="capacity__bar">
-                                <div
-                                    className="capacity__bar-fill"
-                                    style={{ width: `${Math.min(100, ((systemInfo.totalRamMB - systemInfo.freeRamMB) / systemInfo.totalRamMB) * 100)}%` }}
-                                />
+
+                            <div className="capacity__group">
+                                <div className="capacity__stats">
+                                    <span className="capacity__item">
+                                        <strong>Disk:</strong> {(systemInfo.diskTotalGB || 0).toFixed(0)} GB total · {(systemInfo.diskFreeGB || 0).toFixed(0)} GB free
+                                    </span>
+                                </div>
+                                <div className="capacity__bar">
+                                    <div
+                                        className="capacity__bar-fill capacity__bar-fill--disk"
+                                        style={{ width: `${Math.min(100, (((systemInfo.diskTotalGB || 1) - (systemInfo.diskFreeGB || 0)) / (systemInfo.diskTotalGB || 1)) * 100)}%` }}
+                                    />
+                                </div>
+                                <div className="capacity__bar-label">Disk Usage</div>
                             </div>
-                            <div className="capacity__bar-label">RAM Usage</div>
                         </div>
                     )}
 
@@ -307,7 +322,14 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                                                 id={`model-${model.id}`}
                                             >
                                                 <div className="library__card-header">
-                                                    <h4 className="library__card-name">{model.name}</h4>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                        <h4 className="library__card-name">{model.name}</h4>
+                                                        {model.tier === 'agent' && (
+                                                            <span className="library__card-badge library__card-badge--agent">
+                                                                <Bot size={10} /> AGENT SUPPORT
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     {isActive && <span className="library__card-active">Active</span>}
                                                 </div>
                                                 <p className="library__card-desc">{model.description}</p>
@@ -374,11 +396,11 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                                                             <>
                                                                 {!isActive && (
                                                                     <button
-                                                                        className="library__btn library__btn--use"
+                                                                        className={`library__btn library__btn--use ${model.tier === 'agent' ? 'library__btn--agent' : ''}`}
                                                                         onClick={() => handleSwitch(model.id)}
                                                                         disabled={isSwitching}
                                                                     >
-                                                                        {isSwitching ? 'Switching...' : 'Use This Model'}
+                                                                        {isSwitching ? (tier === 'agent' ? 'Initializing...' : 'Switching...') : (tier === 'agent' ? 'Start Agent Session' : 'Use This Model')}
                                                                     </button>
                                                                 )}
                                                                 {!isActive && (

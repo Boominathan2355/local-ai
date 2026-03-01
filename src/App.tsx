@@ -35,6 +35,7 @@ const App: React.FC = () => {
     const [needsSetup, setNeedsSetup] = useState<boolean | null>(null)
     const [activeModelId, setActiveModelId] = useState<string | null>(null)
     const [activeModelName, setActiveModelName] = useState<string | null>(null)
+    const [activeModelTier, setActiveModelTier] = useState<string | null>(null)
 
     const {
         conversations,
@@ -82,6 +83,9 @@ const App: React.FC = () => {
             if ((result as any).activeModelName) {
                 setActiveModelName((result as any).activeModelName)
             }
+            if ((result as any).activeModelTier) {
+                setActiveModelTier((result as any).activeModelTier)
+            }
         })
     }, [])
 
@@ -95,6 +99,9 @@ const App: React.FC = () => {
                 }
                 if ((result as any).activeModelName) {
                     setActiveModelName((result as any).activeModelName)
+                }
+                if ((result as any).activeModelTier) {
+                    setActiveModelTier((result as any).activeModelTier)
                 }
             })
         }
@@ -117,6 +124,9 @@ const App: React.FC = () => {
             }
             if ((result as any).activeModelName) {
                 setActiveModelName((result as any).activeModelName)
+            }
+            if ((result as any).activeModelTier) {
+                setActiveModelTier((result as any).activeModelTier)
             }
         })
     }, [])
@@ -174,6 +184,7 @@ const App: React.FC = () => {
                 onStopGeneration={stopGeneration}
                 activeModelId={activeModelId}
                 activeModelName={activeModelName}
+                activeModelTier={activeModelTier}
                 onRetryMessage={retryMessage}
                 onResendLast={resendLastMessage}
                 modelStatus={modelStatus}
