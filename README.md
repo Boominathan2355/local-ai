@@ -78,6 +78,21 @@ This will generate an AppImage and a `.deb` package in the `dist` folder.
 - **API Keys**: Add your OpenAI, Anthropic, Gemini, Tavily (Primary), or Serper.dev (Secondary) keys in the **Settings Panel** to enable cloud and search features. (Tavily is recommended for the best AI-search experience).
 - **Model Path**: Models are stored locally; you can manage them via the **Model Library** tab.
 
+### Docker Support
+
+You can use the provided `Dockerfile` to build the application in a consistent environment.
+
+1. **Build the image**:
+   ```bash
+   docker build -t local-ai-assistant .
+   ```
+
+2. **Run the build (Linux)**:
+   This will build the AppImage and `.deb` package inside the container's `dist` folder.
+   ```bash
+   docker run -v $(pwd)/dist:/app/dist local-ai-assistant
+   ```
+
 ---
 
 ## 🛡️ Privacy & Security
@@ -90,4 +105,4 @@ This will generate an AppImage and a `.deb` package in the `dist` folder.
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

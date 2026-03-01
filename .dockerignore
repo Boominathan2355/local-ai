@@ -1,0 +1,10 @@
+node_modules
+out
+dist
+*.log
+.git
+.vscode
+.gemini
+brain
+plans
+/tmp
