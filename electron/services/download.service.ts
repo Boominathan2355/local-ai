@@ -316,7 +316,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
     }
 ]
 
-const BINARY_FILENAME = 'llama-server'
+const IS_WINDOWS = process.platform === 'win32'
+const BINARY_FILENAME = IS_WINDOWS ? 'llama-server.exe' : 'llama-server'
 
 /**
  * GitHub API URL for the latest llama.cpp release.
@@ -450,7 +451,8 @@ export class DownloadService extends EventEmitter {
      */
     async downloadBinary(): Promise<string> {
         const archiveUrl = await this.resolveLatestBinaryUrl()
-        const archivePath = path.join(this.llamaDir, 'llama-bin.tar.gz')
+        const archiveExt = IS_WINDOWS ? '.zip' : '.tar.gz'
+        const archivePath = path.join(this.llamaDir, `llama-bin${archiveExt}`)
         await this.downloadFile(archiveUrl, archivePath, 'binary')
 
         const destPath = path.join(this.llamaDir, BINARY_FILENAME)
@@ -458,24 +460,43 @@ export class DownloadService extends EventEmitter {
             const extractDir = path.join(this.llamaDir, '_extract_tmp')
             mkdirSync(extractDir, { recursive: true })
 
-            execSync(`tar -xzf "${archivePath}" -C "${extractDir}"`, { timeout: 30000 })
+            if (IS_WINDOWS) {
+                execSync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${extractDir}' -Force"`, { timeout: 60000 })
+                const findResult = execSync(
+                    `powershell -Command "Get-ChildItem -Path '${extractDir}' -Recurse -Filter 'llama-server.exe' | Select-Object -First 1 -ExpandProperty FullName"`,
+                    { encoding: 'utf-8', timeout: 10000 }
+                ).trim()
 
-            const findResult = execSync(
-                `find "${extractDir}" -name "llama-server" -type f | head -1`,
-                { encoding: 'utf-8', timeout: 5000 }
-            ).trim()
+                if (!findResult) {
+                    throw new Error('llama-server.exe not found in archive')
+                }
 
-            if (!findResult) {
-                throw new Error('llama-server binary not found in archive')
+                const binDir = path.dirname(findResult)
+                execSync(`powershell -Command "Copy-Item -Path '${binDir}\\*' -Destination '${this.llamaDir}' -Force"`, { timeout: 10000 })
+            } else {
+                execSync(`tar -xzf "${archivePath}" -C "${extractDir}"`, { timeout: 30000 })
+
+                const findResult = execSync(
+                    `find "${extractDir}" -name "llama-server" -type f | head -1`,
+                    { encoding: 'utf-8', timeout: 5000 }
+                ).trim()
+
+                if (!findResult) {
+                    throw new Error('llama-server binary not found in archive')
+                }
+
+                const binDir = path.dirname(findResult)
+                execSync(`cp -f "${binDir}"/* "${this.llamaDir}/"`, { timeout: 10000 })
+                chmodSync(destPath, 0o755)
             }
-
-            const binDir = path.dirname(findResult)
-            execSync(`cp -f "${binDir}"/* "${this.llamaDir}/"`, { timeout: 10000 })
-            chmodSync(destPath, 0o755)
 
             try {
                 unlinkSync(archivePath)
-                execSync(`rm -rf "${extractDir}"`, { timeout: 5000 })
+                if (IS_WINDOWS) {
+                    execSync(`powershell -Command "Remove-Item -Path '${extractDir}' -Recurse -Force"`, { timeout: 5000 })
+                } else {
+                    execSync(`rm -rf "${extractDir}"`, { timeout: 5000 })
+                }
             } catch { /* non-critical cleanup */ }
         } catch (err) {
             try { if (existsSync(archivePath)) unlinkSync(archivePath) } catch { /* ignore */ }
@@ -508,15 +529,27 @@ export class DownloadService extends EventEmitter {
                             return
                         }
 
-                        const asset = assets.find((a) =>
-                            a.name.includes('ubuntu-x64') &&
-                            a.name.endsWith('.tar.gz') &&
-                            !a.name.includes('vulkan') &&
-                            !a.name.includes('rocm')
-                        )
+                        let asset: { name: string; browser_download_url: string } | undefined
+
+                        if (IS_WINDOWS) {
+                            asset = assets.find((a) =>
+                                a.name.includes('win-amd64') &&
+                                a.name.endsWith('.zip') &&
+                                !a.name.includes('vulkan') &&
+                                !a.name.includes('rocm')
+                            )
+                        } else {
+                            asset = assets.find((a) =>
+                                a.name.includes('ubuntu-x64') &&
+                                a.name.endsWith('.tar.gz') &&
+                                !a.name.includes('vulkan') &&
+                                !a.name.includes('rocm')
+                            )
+                        }
 
                         if (!asset) {
-                            reject(new Error('No ubuntu-x64 binary found in latest release'))
+                            const platformLabel = IS_WINDOWS ? 'win-amd64' : 'ubuntu-x64'
+                            reject(new Error(`No ${platformLabel} binary found in latest release`))
                             return
                         }
 

@@ -63,7 +63,7 @@ function initServices(): void {
 
     const llamaBasePath = is.dev
         ? join(__dirname, '../../llama')
-        : join(process.resourcesPath, 'llama')
+        : join(app.getPath('userData'), 'llama')
 
     downloadService = new DownloadService(llamaBasePath)
     searchService = new SearchService()
