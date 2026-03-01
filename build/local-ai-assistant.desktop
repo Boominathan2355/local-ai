@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=Local AI Assistant
-Exec=AppRun
+Name=local-ai-assistant
+Exec=local-ai-assistant %U
 Icon=local-ai-assistant
 Type=Application
 Categories=Utility;

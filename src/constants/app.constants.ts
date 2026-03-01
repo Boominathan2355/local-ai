@@ -1,4 +1,4 @@
-export const APP_NAME = 'Local AI Assistant'
+export const APP_NAME = 'local-ai-assistant'
 export const APP_VERSION = '1.0.0'
 
 export const WINDOW_CONFIG = {

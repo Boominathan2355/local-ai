@@ -1,11 +1,13 @@
 appId: com.localai.assistant
-productName: Local AI Assistant
+productName: local-ai-assistant
+executableName: local-ai-assistant
 directories:
   buildResources: build
 files:
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron/*'
+  - '!llama/**/*'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,electron.vite.config.ts}'
 linux:
@@ -19,7 +21,7 @@ win:
     - nsis
   icon: build/icon.ico
 nsis:
-  oneClick: true
+  oneClick: false
   perMachine: true
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true

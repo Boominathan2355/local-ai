@@ -90,7 +90,7 @@ function initServices(): void {
     llamaServer.on('error', (error) => console.error('[LlamaServer]', error))
 
     llamaServer.on('log', (log) => {
-        if (is.dev) console.log('[LlamaServer]', log)
+        console.log('[LlamaServer]', log)
     })
 
     if (llamaServer && storage && downloadService && searchService && cloudModelService) {
