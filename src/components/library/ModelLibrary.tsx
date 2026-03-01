@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { Feather, Lightbulb, Zap, Database, Cloud, Wrench, Bot, Library as LibraryIcon, CheckCircle2, AlertTriangle, XCircle, X, Download } from 'lucide-react'
 import { getLocalAI } from '../../helpers/ipc.helper'
 
 import type { AppSettings } from '../../types/settings.types'
@@ -36,28 +37,38 @@ interface ModelLibraryProps {
     isOpen: boolean
     onClose: () => void
     activeModelId: string | null
-    onModelSwitch: (modelId: string) => void
+    onModelSwitch: (modelId: string, modelName?: string) => void
     settings: AppSettings
     onUpdateSettings: (changes: Partial<AppSettings>) => void
 }
 
+const TIER_ICONS: Record<string, React.ReactNode> = {
+    'ultra-light': <Feather size={16} />,
+    'light': <Lightbulb size={16} />,
+    'medium': <Zap size={16} />,
+    'heavy': <Database size={16} />,
+    'cloud': <Cloud size={16} />,
+    'custom': <Wrench size={16} />,
+    'agent': <Bot size={16} />
+}
+
 const TIER_LABELS: Record<string, string> = {
-    'ultra-light': '🪶 Ultra Light',
-    'light': '💡 Light',
-    'medium': '⚡ Medium',
-    'heavy': '🏋️ Heavy',
-    'cloud': '☁️ Cloud API',
-    'custom': '🛠️ Custom Model',
-    'agent': '🤖 AI Agent'
+    'ultra-light': 'Ultra Light',
+    'light': 'Light',
+    'medium': 'Medium',
+    'heavy': 'Heavy',
+    'cloud': 'Cloud API',
+    'custom': 'Custom Model',
+    'agent': 'AI Agent'
 }
 
 const TIER_ORDER = ['ultra-light', 'light', 'medium', 'heavy', 'cloud', 'custom', 'agent']
 
-function getCompatibility(ramRequired: number, totalRamMB: number): { label: string; className: string } {
+function getCompatibility(ramRequired: number, totalRamMB: number): { label: string; icon: React.ReactNode; className: string } {
     const totalRamGB = totalRamMB / 1024
-    if (totalRamGB >= ramRequired * 1.3) return { label: '✅ Will run great', className: 'compat--good' }
-    if (totalRamGB >= ramRequired) return { label: '⚠️ Tight fit', className: 'compat--warn' }
-    return { label: '❌ Needs more RAM', className: 'compat--bad' }
+    if (totalRamGB >= ramRequired * 1.3) return { label: 'Will run great', icon: <CheckCircle2 size={12} />, className: 'compat--good' }
+    if (totalRamGB >= ramRequired) return { label: 'Tight fit', icon: <AlertTriangle size={12} />, className: 'compat--warn' }
+    return { label: 'Needs more RAM', icon: <XCircle size={12} />, className: 'compat--bad' }
 }
 
 function formatBytes(bytes: number): string {
@@ -154,7 +165,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
         if (!model) return
 
         // Check if cloud model needs API key
-        if ((model.tier === 'cloud' || model.tier === 'agent') && model.provider) {
+        if (model.provider) {
             const currentKey = settings.apiKeys[model.provider as keyof typeof settings.apiKeys]
             if (!currentKey) {
                 setPromptModel(model)
@@ -167,13 +178,13 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
         setIsSwitching(true)
 
         // Add to activated list if not already there
-        if ((model.tier === 'cloud' || model.tier === 'agent') && !settings.activatedCloudModels.includes(modelId)) {
+        if (model.provider && !settings.activatedCloudModels.includes(modelId)) {
             onUpdateSettings({
                 activatedCloudModels: [...settings.activatedCloudModels, modelId]
             })
         }
 
-        onModelSwitch(modelId)
+        onModelSwitch(modelId, model.name)
     }
 
     const handleSaveKeyAndActivate = () => {
@@ -207,7 +218,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
         })
 
         setPromptModel(null)
-        onModelSwitch(mid)
+        onModelSwitch(mid, promptModel.name)
     }
 
     const handleCancel = (modelId: string): void => {
@@ -238,8 +249,10 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
             <div className="library-overlay" id="model-library">
                 <div className="library">
                     <header className="library__header">
-                        <h2 className="library__title">🗂️ Model Library</h2>
-                        <button className="library__close" onClick={onClose} id="library-close">✕</button>
+                        <h2 className="library__title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <LibraryIcon size={24} /> Model Library
+                        </h2>
+                        <button className="library__close" onClick={onClose} id="library-close"><X size={20} /></button>
                     </header>
 
                     {systemInfo && (
@@ -268,7 +281,9 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                     <div className="library__content">
                         {groupedModels.map(({ tier, label, models: tierModels }) => (
                             <div key={tier} className={`library__tier library__tier--${tier}`}>
-                                <h3 className="library__tier-title">{label}
+                                <h3 className="library__tier-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {TIER_ICONS[tier]}
+                                    {label}
                                     {tier !== 'cloud' && tier !== 'custom' && tier !== 'agent' && (
                                         <span className="library__tier-ram">
                                             {tierModels[0]?.ramRequired ?? 0}+ GB RAM
@@ -297,8 +312,8 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                                                 </div>
                                                 <p className="library__card-desc">{model.description}</p>
                                                 <div className="library__card-meta">
-                                                    {tier === 'cloud' || tier === 'agent' ? (
-                                                        <span>API Provider: {model.provider?.toUpperCase() ?? (model.id.includes('claude') ? 'ANTHROPIC' : 'LOCAL')}</span>
+                                                    {model.provider ? (
+                                                        <span>API Provider: {model.provider.toUpperCase()}</span>
                                                     ) : tier === 'custom' ? (
                                                         <span>Manual GGUF Import</span>
                                                     ) : (
@@ -306,8 +321,8 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                                                             <span>{model.sizeGB} GB</span>
                                                             <span>Needs {model.ramRequired} GB RAM</span>
                                                             {compat && (
-                                                                <span className={`library__compat ${compat.className}`}>
-                                                                    {compat.label}
+                                                                <span className={`library__compat ${compat.className}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                    {compat.icon} {compat.label}
                                                                 </span>
                                                             )}
                                                         </>
@@ -341,7 +356,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
 
                                                 {!progress && (
                                                     <div className="library__card-actions">
-                                                        {tier === 'cloud' || tier === 'agent' ? (
+                                                        {model.provider ? (
                                                             !isActive && (
                                                                 <button
                                                                     className={`library__btn library__btn--use ${tier === 'agent' ? 'library__btn--agent' : ''}`}
@@ -379,8 +394,15 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                                                             <button
                                                                 className="library__btn library__btn--download"
                                                                 onClick={() => handleDownload(model.id)}
+                                                                disabled={compat?.className === 'compat--bad'}
+                                                                title={compat?.className === 'compat--bad' ? `Requires ${model.ramRequired}GB RAM` : ''}
+                                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                                                             >
-                                                                ⬇ Download ({model.sizeGB} GB)
+                                                                {compat?.className === 'compat--bad' ? (
+                                                                    <><XCircle size={16} /> Incompatible</>
+                                                                ) : (
+                                                                    <><Download size={16} /> Download ({model.sizeGB} GB)</>
+                                                                )}
                                                             </button>
                                                         )}
                                                     </div>

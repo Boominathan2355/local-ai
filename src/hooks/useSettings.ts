@@ -32,6 +32,12 @@ export function useSettings(): UseSettingsReturn {
             setSettings(loaded)
             setIsLoaded(true)
         })
+
+        const cleanup = api.onSettingsChanged((updated) => {
+            setSettings(updated)
+        })
+
+        return cleanup
     }, [])
 
     const updateSettings = useCallback((changes: Partial<AppSettings>) => {

@@ -100,45 +100,52 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 )}
 
                 <div className="chat__input-wrapper">
-                    <button
-                        className="chat__attach-btn"
-                        onClick={() => fileInputRef.current?.click()}
-                        title="Attach images"
-                    >
-                        📎
-                    </button>
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        style={{ display: 'none' }}
-                        accept="image/*"
-                        multiple
-                        onChange={handleFileChange}
-                    />
                     <textarea
                         ref={textareaRef}
                         className="chat__textarea"
                         value={value}
                         onChange={handleInput}
                         onKeyDown={handleKeyDown}
-                        placeholder={disabled ? 'Waiting for model...' : 'Type a message... (Enter to send, Shift+Enter for new line)'}
+                        placeholder={disabled ? 'Waiting for model...' : 'Ask follow up questions or request detailed reports...'}
                         disabled={disabled && !isStreaming}
                         rows={1}
                         id="message-input"
                     />
-                    <button
-                        className={`chat__send-btn ${isStreaming ? 'chat__send-btn--stop' : ''}`}
-                        onClick={handleSubmit}
-                        disabled={!isStreaming && (!value.trim() && images.length === 0 || disabled)}
-                        title={isStreaming ? 'Stop generation' : 'Send message'}
-                        id="send-btn"
-                    >
-                        {isStreaming ? '■' : '↑'}
-                    </button>
                 </div>
-                <div className="chat__input-hint">
-                    Local AI · Private · Multimodal · Google Gemini / Claude / GPT Support
+
+                <div className="chat__input-tools">
+                    <div className="chat__input-tools-left">
+                        <button className="chat__tool-icon" onClick={() => fileInputRef.current?.click()}>📎</button>
+                        <div className="chat__tool-divider"></div>
+                        <button className="chat__web-search">
+                            <span className="chat__web-search-icon">🌐</span>
+                            <span>Web Search</span>
+                        </button>
+                    </div>
+
+                    <div className="chat__input-tools-right">
+                        <button
+                            className={`chat__send-circle ${isStreaming ? 'chat__send-circle--stop' : ''}`}
+                            onClick={handleSubmit}
+                            disabled={!isStreaming && (!value.trim() && images.length === 0 || disabled)}
+                            id="send-btn"
+                        >
+                            {isStreaming ? '■' : '↑'}
+                        </button>
+                    </div>
                 </div>
+
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                    accept="image/*"
+                    multiple
+                    onChange={handleFileChange}
+                />
+            </div>
+            <div className="chat__footer-disclaimer">
+                    AI can make mistakes. Verify Important Information.
             </div>
         </div>
     )

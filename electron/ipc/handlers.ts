@@ -6,6 +6,7 @@ import { LlamaServerService } from '../services/llama-server.service'
 import { StorageService } from '../services/storage.service'
 import { SystemMonitorService } from '../services/system-monitor.service'
 import { DownloadService } from '../services/download.service'
+import { McpService } from '../services/mcp.service'
 import { getCloudModel, streamCloudCompletion, CLOUD_MODELS } from '../services/cloud-api.service'
 
 import type { ChatMessage } from '../../src/types/chat.types'
@@ -28,10 +29,25 @@ export function registerIpcHandlers(
     llamaServer: LlamaServerService,
     storage: StorageService,
     systemMonitor: SystemMonitorService,
-    downloadService: DownloadService
+    downloadService: DownloadService,
+    mcpService: McpService,
+    initialModelId: string | null = null
 ): void {
     let activeAbortController: AbortController | null = null
-    let activeModelId: string | null = null
+    let activeModelId: string | null = initialModelId
+
+    interface PermissionRequest {
+        resolve: (allowed: boolean) => void
+    }
+    const permissionRequests = new Map<string, PermissionRequest>()
+
+    ipcMain.on(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_RESPONSE, (_event, requestId: string, allowed: boolean) => {
+        const request = permissionRequests.get(requestId)
+        if (request) {
+            request.resolve(allowed)
+            permissionRequests.delete(requestId)
+        }
+    })
 
     // --- Conversations ---
 
@@ -93,18 +109,23 @@ export function registerIpcHandlers(
 
         try {
             await llamaServer.start()
-            return { success: true, activeModelId }
+            return { success: true, activeModelId, activeModelName: match?.name ?? null }
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to start server'
             return { error: message }
         }
     })
 
-    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_GET_MODELS, () => {
+    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_GET_MODELS, (_event, options?: { includeCloud?: boolean }) => {
         const localModels = downloadService.getAvailableModels().map(m => ({
             ...m,
             downloaded: downloadService.isModelDownloaded(m.id)
         }))
+
+        if (options?.includeCloud === false) {
+            return localModels
+        }
+
         const cloudModelsMapped = CLOUD_MODELS.map(m => ({
             id: m.id,
             name: m.name,
@@ -122,7 +143,12 @@ export function registerIpcHandlers(
     })
 
     ipcMain.handle(IPC_CHANNELS.MODEL_GET_ACTIVE, () => {
-        return { activeModelId }
+        const models = downloadService.getDownloadedModels()
+        const activeModel = models.find(m => m.id === activeModelId)
+        return {
+            activeModelId,
+            activeModelName: activeModel?.name ?? null
+        }
     })
 
     ipcMain.handle(IPC_CHANNELS.MODEL_SWITCH, async (_event, modelId: string) => {
@@ -139,7 +165,8 @@ export function registerIpcHandlers(
 
         if (isCloud) {
             activeModelId = modelId
-            return { success: true, activeModelId }
+            const cloudModel = getCloudModel(modelId)
+            return { success: true, activeModelId, activeModelName: cloudModel?.name ?? modelId }
         }
 
         const model = downloadService.getAvailableModels().find(m => m.id === modelId)
@@ -160,7 +187,7 @@ export function registerIpcHandlers(
 
         try {
             await llamaServer.start()
-            return { success: true, activeModelId }
+            return { success: true, activeModelId, activeModelName: model?.name ?? null }
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to start server'
             return { error: message }
@@ -238,6 +265,7 @@ export function registerIpcHandlers(
                 images
             }
             storage.addMessage(userMessage)
+            window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: userMessage })
 
             // Auto-title
             const conversation = storage.getConversation(conversationId)
@@ -248,89 +276,207 @@ export function registerIpcHandlers(
 
             try {
                 activeAbortController = new AbortController()
+                const settings = storage.getSettings()
+
+                // Register built-in servers to context if not already
+                const builtinServers = mcpService.getBuiltinServers()
+                const allServers = [...(settings.mcpServers || []), ...builtinServers]
+                const enabledServers = allServers.filter(s => s.enabled)
+
+                // Enhance system prompt with tool instructions if tools are available
+                let enhancedSystemPrompt = systemPrompt + `\n\nUser OS: linux\nWorking Directory: ${process.cwd()}`
+                const availableTools: any[] = []
+
+                for (const server of enabledServers) {
+                    const tools = await mcpService.listTools(server.id)
+                    availableTools.push(...tools.map(t => ({ ...t, serverId: server.id })))
+                }
+
+                if (availableTools.length > 0) {
+                    enhancedSystemPrompt += `
+
+## Model Context Protocol (MCP) Tools
+You have access to the following tools via MCP:
+${availableTools.map(t => `- ${t.name}: ${t.description}`).join('\n')}
+
+If a user request requires using these tools, you must respond ONLY in valid JSON using this format:
+{
+  "tool_call": {
+    "name": "<tool_name>",
+    "arguments": { ... }
+  }
+}
+
+Do NOT explain. Do NOT add text before or after JSON. Only call tools when necessary.
+After receiving tool results, you can use them to provide a final response or call more tools if needed.`
+                }
+
                 let assistantContent = ''
+                let toolLoops = 0
+                const MAX_TOOL_LOOPS = 5
 
-                if (cloudModel) {
-                    // Cloud API flow
-                    const settings = storage.getSettings()
-                    const apiKey = settings.apiKeys[cloudModel.provider as keyof typeof settings.apiKeys]
-
-                    if (!apiKey) {
-                        throw new Error(`API Key for ${cloudModel.provider} is missing. Please add it in Settings.`)
-                    }
-
-                    // Build context for cloud
+                while (toolLoops < MAX_TOOL_LOOPS) {
                     const contextMessages = storage.getRollingContext(conversationId, 4000)
-                    const messages = [
-                        { role: 'system', content: systemPrompt },
-                        ...contextMessages.map((m) => {
-                            if (m.images && m.images.length > 0) {
-                                return {
-                                    role: m.role,
-                                    content: [
-                                        { type: 'text', text: m.content },
-                                        ...m.images.map(img => ({
-                                            type: 'image_url',
-                                            image_url: { url: img }
-                                        }))
-                                    ]
-                                }
-                            }
-                            return { role: m.role, content: m.content }
-                        })
-                    ]
 
-                    // If latest message has images, ensure they are sent
-                    if (images && images.length > 0) {
-                        const lastMsg = messages[messages.length - 1]
-                        if (typeof lastMsg.content === 'string') {
-                            lastMsg.content = [
-                                { type: 'text', text: lastMsg.content },
-                                ...images.map(img => ({ type: 'image_url', image_url: { url: img } }))
-                            ]
+                    if (cloudModel) {
+                        // Cloud API flow
+                        const apiKey = settings.apiKeys[cloudModel.provider as keyof typeof settings.apiKeys]
+
+                        if (!apiKey) {
+                            throw new Error(`API Key for ${cloudModel.provider} is missing. Please add it in Settings.`)
+                        }
+
+                        const messages = [
+                            { role: 'system', content: enhancedSystemPrompt },
+                            ...contextMessages.map((m) => {
+                                if (m.images && m.images.length > 0) {
+                                    return {
+                                        role: m.role,
+                                        content: [
+                                            { type: 'text', text: m.content },
+                                            ...m.images.map(img => ({
+                                                type: 'image_url',
+                                                image_url: { url: img }
+                                            }))
+                                        ]
+                                    }
+                                }
+                                return { role: m.role, content: m.content }
+                            })
+                        ]
+
+                        // If latest message has images, ensure they are sent
+                        if (images && images.length > 0) {
+                            const lastMsg = messages[messages.length - 1]
+                            if (typeof lastMsg.content === 'string') {
+                                lastMsg.content = [
+                                    { type: 'text', text: lastMsg.content },
+                                    ...images.map(img => ({ type: 'image_url', image_url: { url: img } }))
+                                ]
+                            }
+                        }
+
+                        assistantContent = await streamCloudCompletion({
+                            provider: cloudModel.provider,
+                            apiKey,
+                            model: cloudModel.modelId,
+                            messages: messages as any,
+                            temperature: settings.temperature,
+                            maxTokens: settings.maxTokens,
+                            signal: activeAbortController.signal,
+                            onToken: (token) => {
+                                window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, {
+                                    conversationId,
+                                    token,
+                                    done: false
+                                })
+                            }
+                        })
+                    } else {
+                        // Local llama flow
+                        const messages = [
+                            { role: 'system' as const, content: enhancedSystemPrompt },
+                            ...contextMessages.map((m) => ({ role: m.role, content: m.content }))
+                        ]
+
+                        assistantContent = await streamCompletion(
+                            llamaServer.baseUrl,
+                            messages,
+                            activeAbortController.signal,
+                            (token: string) => {
+                                window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, {
+                                    conversationId,
+                                    token,
+                                    done: false
+                                })
+                            }
+                        )
+                    }
+
+                    // Check for tool call
+                    let toolCallMatch = null
+                    try {
+                        const parsed = JSON.parse(assistantContent.trim())
+                        if (parsed.tool_call) {
+                            toolCallMatch = parsed.tool_call
+                        }
+                    } catch {
+                        // Not a JSON tool call
+                    }
+
+                    if (toolCallMatch) {
+                        const { name, arguments: toolArgs } = toolCallMatch
+                        const toolDef = availableTools.find(t => t.name === name)
+
+                        if (!toolDef) {
+                            assistantContent = `Error: Tool ${name} not found.`
+                        } else {
+                            try {
+                                // 1. Save assistant tool call message IMMEDIATELY
+                                const assistantMsg: ChatMessage = {
+                                    id: generateId(),
+                                    conversationId,
+                                    role: 'assistant',
+                                    content: assistantContent,
+                                    tokenCount: estimateTokens(assistantContent),
+                                    createdAt: Date.now()
+                                }
+                                storage.addMessage(assistantMsg)
+                                window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: assistantMsg })
+                                window.webContents.send(IPC_CHANNELS.CHAT_STREAM_COMPLETE, { conversationId, toolCall: true })
+
+                                // 2. Ask for permission
+                                const requestId = generateId()
+                                window.webContents.send(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_REQUESTED, {
+                                    requestId,
+                                    toolName: name,
+                                    arguments: toolArgs
+                                })
+
+                                const allowed = await new Promise<boolean>((resolve) => {
+                                    permissionRequests.set(requestId, { resolve })
+                                })
+
+                                if (!allowed) {
+                                    const toolResultMsg: ChatMessage = {
+                                        id: generateId(),
+                                        conversationId,
+                                        role: 'tool',
+                                        content: `Tool Result (${name}):\nError: User denied permission to execute this tool.`,
+                                        tokenCount: 10,
+                                        createdAt: Date.now()
+                                    }
+                                    storage.addMessage(toolResultMsg)
+                                    window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: toolResultMsg })
+                                    toolLoops++
+                                    continue
+                                }
+
+                                // 3. Call the tool (might take time)
+                                const result = await mcpService.callTool(toolDef.serverId, name, toolArgs)
+                                const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+
+                                // 3. Save tool result and notify
+                                const toolResultMsg: ChatMessage = {
+                                    id: generateId(),
+                                    conversationId,
+                                    role: 'tool',
+                                    content: `Tool Result (${name}):\n${resultStr}`,
+                                    tokenCount: estimateTokens(resultStr),
+                                    createdAt: Date.now()
+                                }
+                                storage.addMessage(toolResultMsg)
+                                window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: toolResultMsg })
+
+                                toolLoops++
+                                continue // Loop back to model with tool result
+                            } catch (err) {
+                                assistantContent = `Error calling tool ${name}: ${err instanceof Error ? err.message : String(err)}`
+                            }
                         }
                     }
 
-                    assistantContent = await streamCloudCompletion({
-                        provider: cloudModel.provider,
-                        apiKey,
-                        model: cloudModel.modelId,
-                        messages: messages as any,
-                        temperature: settings.temperature,
-                        maxTokens: settings.maxTokens,
-                        signal: activeAbortController.signal,
-                        onToken: (token) => {
-                            window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, {
-                                conversationId,
-                                token,
-                                done: false
-                            })
-                        }
-                    })
-                } else {
-                    // Local llama flow
-                    const contextMessages = storage.getRollingContext(
-                        conversationId,
-                        2048 - estimateTokens(systemPrompt) - 256
-                    )
-
-                    const messages = [
-                        { role: 'system' as const, content: systemPrompt },
-                        ...contextMessages.map((m) => ({ role: m.role, content: m.content }))
-                    ]
-
-                    assistantContent = await streamCompletion(
-                        llamaServer.baseUrl,
-                        messages,
-                        activeAbortController.signal,
-                        (token: string) => {
-                            window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, {
-                                conversationId,
-                                token,
-                                done: false
-                            })
-                        }
-                    )
+                    break // Exit loop if no tool call or error
                 }
 
                 // Save assistant message
@@ -343,6 +489,7 @@ export function registerIpcHandlers(
                     createdAt: Date.now()
                 }
                 storage.addMessage(assistantMessage)
+                window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: assistantMessage })
 
                 window.webContents.send(IPC_CHANNELS.CHAT_STREAM_COMPLETE, { conversationId })
                 return { success: true }
@@ -436,6 +583,59 @@ export function registerIpcHandlers(
     ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CANCEL, (_event, downloadId: string) => {
         downloadService.cancelDownload(downloadId)
         return { success: true }
+    })
+
+    // --- MCP ---
+
+    ipcMain.handle(IPC_CHANNELS.MCP_GET_SERVERS, () => {
+        const settings = storage.getSettings()
+        return settings.mcpServers || []
+    })
+
+    ipcMain.handle(IPC_CHANNELS.MCP_ADD_SERVER, async (_event, server: any) => {
+        const settings = storage.getSettings()
+        const newServers = [...(settings.mcpServers || []), server]
+        storage.setSettings({ mcpServers: newServers })
+
+        if (server.enabled) {
+            await mcpService.connect(server).catch(console.error)
+        }
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.MCP_DELETE_SERVER, async (_event, id: string) => {
+        const settings = storage.getSettings()
+        const newServers = settings.mcpServers.filter(s => s.id !== id)
+        storage.setSettings({ mcpServers: newServers })
+        await mcpService.disconnect(id)
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.MCP_TOGGLE_SERVER, async (_event, id: string) => {
+        const settings = storage.getSettings()
+        const newServers = settings.mcpServers.map(s => {
+            if (s.id === id) {
+                return { ...s, enabled: !s.enabled }
+            }
+            return s
+        })
+        storage.setSettings({ mcpServers: newServers })
+
+        const server = newServers.find(s => s.id === id)
+        if (server?.enabled) {
+            await mcpService.connect(server).catch(console.error)
+        } else {
+            await mcpService.disconnect(id)
+        }
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.MCP_GET_TOOLS, async (_event, serverId: string) => {
+        return mcpService.listTools(serverId)
+    })
+
+    ipcMain.handle(IPC_CHANNELS.MCP_GET_SERVER_STATUS, (_event, serverId: string) => {
+        return mcpService.getServerStatus(serverId)
     })
 }
 

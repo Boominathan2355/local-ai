@@ -5,107 +5,137 @@
 
 /* --- CSS Custom Properties (Design Tokens) --- */
 :root {
-  /* Default: DARK THEME (Cyberpunk/Premium) */
-  --bg-primary: #050508;
-  --bg-secondary: #0d0d14;
-  --bg-tertiary: #12121e;
-  --bg-elevated: #1a1a2a;
-  --bg-hover: rgba(255, 255, 255, 0.05);
-  --bg-active: rgba(255, 255, 255, 0.1);
+  /* --- LIGHT THEME (Enterprise/Professional) --- */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  /* Gray 50 */
+  --bg-tertiary: #f3f4f6;
+  /* Gray 100 */
+  --bg-elevated: #ffffff;
+  --bg-hover: #f3f4f6;
+  --bg-active: #e5e7eb;
+  /* Gray 200 */
 
-  /* Surface (glassmorphic panels) */
-  --surface-glass: rgba(13, 13, 20, 0.75);
-  --surface-glass-border: rgba(255, 255, 255, 0.08);
-  --surface-glass-hover: rgba(20, 20, 30, 0.85);
-  --surface-glass-blur: blur(16px);
+  /* Surface / Borders */
+  --border-subtle: #f3f4f6;
+  --border-main: #e5e7eb;
+  --border-strong: #d1d5db;
 
   /* Text */
-  --text-primary: #f8f9fa;
-  --text-secondary: #a0a0b0;
-  --text-tertiary: #606070;
-  --text-inverse: #050508;
+  --text-primary: #111827;
+  /* Gray 900 */
+  --text-secondary: #4b5563;
+  /* Gray 600 */
+  --text-tertiary: #9ca3af;
+  /* Gray 400 */
+  --text-inverse: #ffffff;
 
-  /* Accent – Electric Purple to Neon Blue */
-  --accent-primary: #7f0df2;
-  --accent-secondary: #00d2ff;
-  --accent-gradient: linear-gradient(135deg, #7f0df2 0%, #00d2ff 100%);
-  --accent-gradient-hover: linear-gradient(135deg, #8f1df2 0%, #10e2ff 100%);
-  --accent-glow: 0 0 20px rgba(127, 13, 242, 0.35);
+  /* Accent – Enterprise Indigo */
+  --accent-primary: #4f46e5;
+  --accent-secondary: #6366f1;
+  --accent-gradient: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+  --accent-gradient-hover: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%);
+  --accent-glow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 
-  /* Status colors */
-  --status-ready: #00ff9d;
-  --status-loading: #ffcc00;
-  --status-error: #ff4b2b;
-  --status-generating: #4da3ff;
-  --status-disconnected: #4a4a5a;
+  /* Status colors (Accessible) */
+  --status-ready: #10b981;
+  /* Emerald 500 */
+  --status-loading: #f59e0b;
+  /* Amber 500 */
+  --status-error: #ef4444;
+  /* Red 500 */
+  --status-generating: #3b82f6;
+  /* Blue 500 */
+  --status-disconnected: #6b7280;
+  /* Gray 500 */
 
   /* Message bubbles */
-  --msg-user-bg: rgba(127, 13, 242, 0.15);
-  --msg-user-border: rgba(127, 13, 242, 0.25);
-  --msg-assistant-bg: rgba(255, 255, 255, 0.04);
-  --msg-assistant-border: rgba(255, 255, 255, 0.08);
+  --msg-user-bg: #4f46e5;
+  --msg-user-border: #4338ca;
+  --msg-assistant-bg: #f9fafb;
+  --msg-assistant-border: #e5e7eb;
 
   /* Avatars */
-  --msg-user-avatar-bg: var(--accent-gradient);
+  --msg-user-avatar-bg: #4f46e5;
   --msg-user-avatar-color: #ffffff;
-  --msg-assistant-avatar-bg: var(--bg-elevated);
-  --msg-assistant-avatar-border: var(--surface-glass-border);
-  --msg-assistant-avatar-color: var(--accent-secondary);
+  --msg-assistant-avatar-bg: #f3f4f6;
+  --msg-assistant-avatar-border: #e5e7eb;
+  --msg-assistant-avatar-color: #4f46e5;
 
   /* Typography */
-  --font-family: 'Space Grotesk', -apple-system, sans-serif;
+  --font-family: 'Inter', 'Space Grotesk', -apple-system, sans-serif;
+  --font-size-xs: 11px;
+  --font-size-sm: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 32px;
 
-  /* Shadows & Radius (Shared) */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 20px;
-  --radius-xl: 24px;
-  --shadow-glow: 0 0 24px rgba(127, 13, 242, 0.2);
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
 
-  /* Layout remains unchanged */
-  --sidebar-width: 280px;
-  --header-height: 56px;
-  --input-height: 120px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+  --space-4xl: 64px;
+
+  /* Shadows & Radius (Modern Subtle) */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-round: 50%;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+
+  /* Layout */
+  --sidebar-width: 260px;
+  --header-height: 64px;
+  --input-height: auto;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* --- LIGHT THEME (Airy/Premium) --- */
-[data-theme='light'] {
-  --bg-primary: #f8f9fa;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #ebedef;
-  --bg-elevated: #dee2e6;
-  --bg-hover: rgba(0, 0, 0, 0.03);
-  --bg-active: rgba(0, 0, 0, 0.06);
+/* --- DARK THEME (Refined Professional Dark) --- */
+[data-theme='dark'] {
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #141414;
+  --bg-tertiary: #1f1f1f;
+  --bg-elevated: #1f1f1f;
+  --bg-hover: #1f1f1f;
+  --bg-active: #2a2a2a;
 
-  /* Surface (glassmorphic panels) */
-  --surface-glass: rgba(255, 255, 255, 0.75);
-  --surface-glass-border: rgba(0, 0, 0, 0.08);
-  --surface-glass-hover: rgba(255, 255, 255, 0.85);
+  --border-subtle: #1f1f1f;
+  --border-main: #2a2a2a;
+  --border-strong: #3f3f3f;
 
-  /* Text */
-  --text-primary: #1a1a1b;
-  --text-secondary: #5a5a6a;
-  --text-tertiary: #8a8a9a;
-  --text-inverse: #f8f9fa;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --text-tertiary: #6b7280;
+  --text-inverse: #0a0a0a;
 
-  /* Accent (A bit softer for light mode) */
-  --accent-primary: #6c5ce7;
-  --accent-secondary: #0bbdb9;
-  --accent-gradient: linear-gradient(135deg, #6c5ce7 0%, #0bbdb9 100%);
-  --accent-glow: 0 0 15px rgba(108, 92, 231, 0.2);
+  --accent-primary: #6366f1;
+  --accent-secondary: #818cf8;
+  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #818cf8 100%);
 
-  /* Message bubbles */
-  --msg-user-bg: rgba(108, 92, 231, 0.08);
-  --msg-user-border: rgba(108, 92, 231, 0.15);
-  --msg-assistant-bg: rgba(0, 0, 0, 0.02);
-  --msg-assistant-border: rgba(0, 0, 0, 0.05);
-
-  /* Avatars (Light Mode) */
-  --msg-user-avatar-bg: var(--accent-primary);
-  --msg-user-avatar-color: #ffffff;
-  --msg-assistant-avatar-bg: var(--bg-tertiary);
-  --msg-assistant-avatar-border: rgba(0, 0, 0, 0.1);
-  --msg-assistant-avatar-color: var(--accent-primary);
+  --msg-user-bg: #6366f1;
+  --msg-assistant-bg: #141414;
+  --msg-assistant-border: #2a2a2a;
 }
 
 /* --- Reset & Base --- */
@@ -128,14 +158,13 @@ body,
 
 body {
   font-family: var(--font-family);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-regular);
-  line-height: var(--line-height-normal);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
   color: var(--text-primary);
   background: var(--bg-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  user-select: none;
 }
 
 a {
@@ -282,4 +311,27 @@ textarea {
 
 .animate-slideUp {
   animation: slideInUp var(--transition-normal) ease-out;
+}
+
+/* App Layout */
+.app-layout {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+.app-loading__text {
+  font-size: 14px;
+  font-weight: 500;
 }

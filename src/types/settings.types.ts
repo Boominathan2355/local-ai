@@ -25,6 +25,7 @@ export interface AppSettings {
     topP: number
     maxTokens: number
     theme: 'dark' | 'light'
+    userName: string
     /** API keys for cloud providers */
     apiKeys: ApiKeyConfig
     /** List of cloud model IDs that have been explicitly activated by the user */
@@ -49,7 +50,25 @@ export const DEFAULT_SETTINGS: AppSettings = {
     topP: 0.9,
     maxTokens: 1024,
     theme: 'dark',
+    userName: 'Local AI User',
     apiKeys: DEFAULT_API_KEYS,
     activatedCloudModels: [],
-    mcpServers: []
+    mcpServers: [
+        {
+            id: 'builtin-filesystem',
+            name: 'Filesystem (Built-in)',
+            type: 'stdio',
+            urlOrPath: '',
+            enabled: false,
+            status: 'connected'
+        },
+        {
+            id: 'builtin-terminal',
+            name: 'Terminal (Built-in)',
+            type: 'stdio',
+            urlOrPath: '',
+            enabled: false,
+            status: 'connected'
+        }
+    ]
 }

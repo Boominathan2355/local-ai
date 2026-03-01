@@ -20,6 +20,8 @@
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "@fontsource/space-grotesk": "^5.2.10",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "lucide-react": "^0.575.0",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^16.1.1",
     "remark-gfm": "^4.0.1"

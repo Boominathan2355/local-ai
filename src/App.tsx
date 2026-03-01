@@ -11,6 +11,7 @@ import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ModelSetup } from './components/setup/ModelSetup'
 import { ModelLibrary } from './components/library/ModelLibrary'
 import { McpRegistry } from './components/library/McpRegistry'
+import { UserProfile } from './components/user/UserProfile'
 
 import { useConversations } from './hooks/useConversations'
 import { useChat } from './hooks/useChat'
@@ -24,13 +25,16 @@ import './styles/chat.css'
 import './styles/settings.css'
 import './styles/setup.css'
 import './styles/model-library.css'
+import './styles/user.css'
 
 const App: React.FC = () => {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
     const [isLibraryOpen, setIsLibraryOpen] = useState(false)
     const [isMcpOpen, setIsMcpOpen] = useState(false)
+    const [isUserOpen, setIsUserOpen] = useState(false)
     const [needsSetup, setNeedsSetup] = useState<boolean | null>(null)
     const [activeModelId, setActiveModelId] = useState<string | null>(null)
+    const [activeModelName, setActiveModelName] = useState<string | null>(null)
 
     const {
         conversations,
@@ -46,7 +50,11 @@ const App: React.FC = () => {
         isStreaming,
         error,
         sendMessage,
-        stopGeneration
+        stopGeneration,
+        retryMessage,
+        resendLastMessage,
+        pendingToolCall,
+        respondToToolCall
     } = useChat(activeConversationId)
 
     const { status: modelStatus, isReady: modelReady } = useModelStatus()
@@ -71,6 +79,9 @@ const App: React.FC = () => {
 
         api.model.getActive().then((result) => {
             setActiveModelId(result.activeModelId)
+            if ((result as any).activeModelName) {
+                setActiveModelName((result as any).activeModelName)
+            }
         })
     }, [])
 
@@ -82,17 +93,30 @@ const App: React.FC = () => {
                 if (result.activeModelId) {
                     setActiveModelId(result.activeModelId)
                 }
+                if ((result as any).activeModelName) {
+                    setActiveModelName((result as any).activeModelName)
+                }
             })
         }
     }, [])
 
-    const handleSwitchModel = useCallback((modelId: string) => {
+    const handleSwitchModel = useCallback((modelId: string, modelName?: string) => {
+        // Optimistically update the UI to make switching feel instantaneous
+        setActiveModelId(modelId)
+        if (modelName) {
+            setActiveModelName(modelName)
+        }
+
         const api = getLocalAI()
         if (!api) return
 
         api.model.switchModel(modelId).then((result) => {
+            // Re-sync with actual result from backend
             if (result.activeModelId) {
                 setActiveModelId(result.activeModelId)
+            }
+            if ((result as any).activeModelName) {
+                setActiveModelName((result as any).activeModelName)
             }
         })
     }, [])
@@ -114,16 +138,8 @@ const App: React.FC = () => {
     // Show loading state while checking setup
     if (needsSetup === null) {
         return (
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100vh',
-                width: '100vw',
-                background: 'var(--bg-primary)',
-                color: 'var(--text-secondary)'
-            }}>
-                Loading...
+            <div className="app-loading">
+                <div className="app-loading__text">Initializing Assistant...</div>
             </div>
         )
     }
@@ -134,7 +150,7 @@ const App: React.FC = () => {
     }
 
     return (
-        <div style={{ display: 'flex', height: '100vh', width: '100vw' }} id="app-root">
+        <div className="app-layout" id="app-root">
             <ConversationSidebar
                 conversations={conversations}
                 activeConversationId={activeConversationId}
@@ -143,6 +159,9 @@ const App: React.FC = () => {
                 onNewChat={createConversation}
                 onOpenSettings={() => setIsSettingsOpen(true)}
                 onOpenMcp={() => setIsMcpOpen(true)}
+                onOpenLibrary={() => setIsLibraryOpen(true)}
+                onOpenUser={() => setIsUserOpen(true)}
+                settings={settings}
             />
 
             <ChatWindow
@@ -154,10 +173,15 @@ const App: React.FC = () => {
                 onSendMessage={handleSendMessage}
                 onStopGeneration={stopGeneration}
                 activeModelId={activeModelId}
+                activeModelName={activeModelName}
+                onRetryMessage={retryMessage}
+                onResendLast={resendLastMessage}
                 modelStatus={modelStatus}
                 onSwitchModel={handleSwitchModel}
-                onOpenLibrary={() => setIsLibraryOpen(true)}
                 settings={settings}
+                onUpdateSettings={updateSettings}
+                pendingToolCall={pendingToolCall}
+                onRespondToToolCall={respondToToolCall}
             />
 
             <SettingsPanel
@@ -180,6 +204,13 @@ const App: React.FC = () => {
             <McpRegistry
                 isOpen={isMcpOpen}
                 onClose={() => setIsMcpOpen(false)}
+                settings={settings}
+                onUpdateSettings={updateSettings}
+            />
+
+            <UserProfile
+                isOpen={isUserOpen}
+                onClose={() => setIsUserOpen(false)}
                 settings={settings}
                 onUpdateSettings={updateSettings}
             />

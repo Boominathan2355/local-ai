@@ -2,6 +2,8 @@ import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import path from 'path'
 
+import { EventEmitter } from 'events'
+
 import type { Conversation } from '../../src/types/conversation.types'
 import type { ChatMessage } from '../../src/types/chat.types'
 import type { AppSettings } from '../../src/types/settings.types'
@@ -20,15 +22,17 @@ const STORAGE_FILE = 'local-ai-data.json'
  * Stores conversations, messages, and settings in Electron's userData directory.
  * No native dependencies — works on all platforms.
  */
-export class StorageService {
+export class StorageService extends EventEmitter {
     private data: StorageData
     private readonly filePath: string
 
     constructor() {
+        super()
         const userDataPath = app.getPath('userData')
         mkdirSync(userDataPath, { recursive: true })
         this.filePath = path.join(userDataPath, STORAGE_FILE)
         this.data = this.load()
+        this.save() // Ensure merged servers are persisted
     }
 
     // --- Conversations ---
@@ -112,6 +116,7 @@ export class StorageService {
     setSettings(settings: Partial<AppSettings>): AppSettings {
         this.data.settings = { ...this.data.settings, ...settings }
         this.save()
+        this.emit('settingsChanged', this.data.settings)
         return this.data.settings
     }
 
@@ -138,6 +143,17 @@ export class StorageService {
                 // Ensure parsed.settings exists to avoid errors when accessing properties
                 const parsedSettings = parsed.settings || {}
 
+                const existingServers = parsedSettings.mcpServers || []
+                const defaultServers = DEFAULT_SETTINGS.mcpServers || []
+
+                // Merge servers: keep existing ones, add missing default ones
+                const mergedServers = [...existingServers]
+                for (const defServer of defaultServers) {
+                    if (!mergedServers.some(s => s.id === defServer.id)) {
+                        mergedServers.push(defServer)
+                    }
+                }
+
                 return {
                     conversations: parsed.conversations || [],
                     messages: parsed.messages || {},
@@ -149,7 +165,7 @@ export class StorageService {
                             ...(parsedSettings.apiKeys || {})
                         },
                         activatedCloudModels: parsedSettings.activatedCloudModels || [],
-                        mcpServers: parsedSettings.mcpServers || []
+                        mcpServers: mergedServers
                     }
                 }
             }

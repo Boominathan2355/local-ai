@@ -6,6 +6,7 @@ import { LlamaServerService } from '../services/llama-server.service'
 import { StorageService } from '../services/storage.service'
 import { SystemMonitorService } from '../services/system-monitor.service'
 import { DownloadService } from '../services/download.service'
+import { McpService } from '../services/mcp.service'
 import { registerIpcHandlers } from '../ipc/handlers'
 import { IPC_CHANNELS } from '../ipc/channels'
 
@@ -21,6 +22,7 @@ let llamaServer: LlamaServerService | null = null
 let storage: StorageService | null = null
 let systemMonitor: SystemMonitorService | null = null
 let downloadService: DownloadService | null = null
+let mcpService: McpService | null = null
 
 
 function createWindow(): void {
@@ -71,12 +73,18 @@ function initServices(): void {
     downloadService = new DownloadService(llamaBasePath)
 
     // Resolve model path dynamically: use first available downloaded model
-    const modelPath = downloadService.getFirstAvailableModelPath()
-        ?? join(llamaBasePath, 'models', 'model.gguf')
+    const initialModelPath = downloadService.getFirstAvailableModelPath()
+    let initialModelId: string | null = null
+
+    if (initialModelPath) {
+        const downloaded = downloadService.getDownloadedModels()
+        const match = downloaded.find((m) => initialModelPath.includes(m.filename))
+        initialModelId = match?.id ?? null
+    }
 
     llamaServer = new LlamaServerService({
         binaryPath: downloadService.getBinaryPath(),
-        modelPath
+        modelPath: initialModelPath ?? join(llamaBasePath, 'models', 'model.gguf')
     })
 
     llamaServer.on('statusChanged', (status) => {
@@ -93,10 +101,20 @@ function initServices(): void {
         }
     })
 
-    registerIpcHandlers(llamaServer, storage, systemMonitor, downloadService)
+    mcpService = new McpService()
+
+    registerIpcHandlers(llamaServer, storage, systemMonitor, downloadService, mcpService, initialModelId)
+
+    mcpService.on('statusChanged', (serverId, status) => {
+        mainWindow?.webContents.send(IPC_CHANNELS.MCP_SERVER_STATUS_CHANGED, { serverId, status })
+    })
+
+    storage.on('settingsChanged', (settings) => {
+        mainWindow?.webContents.send(IPC_CHANNELS.SETTINGS_CHANGED, settings)
+    })
 
     // Only auto-start if both binary and model exist
-    if (downloadService.isBinaryDownloaded() && modelPath) {
+    if (downloadService.isBinaryDownloaded() && initialModelPath) {
         llamaServer.start().catch((err) => {
             console.error('[LlamaServer] Failed to start:', err)
         })
@@ -109,6 +127,9 @@ function initServices(): void {
 async function gracefulShutdown(): Promise<void> {
     if (llamaServer) {
         await llamaServer.stop()
+    }
+    if (mcpService) {
+        await mcpService.shutdown()
     }
 }
 

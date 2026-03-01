@@ -1,4 +1,5 @@
 import React from 'react'
+import { Trash2 } from 'lucide-react'
 
 import type { Conversation } from '../../types/conversation.types'
 import { formatRelativeTime } from '../../utils/format.utils'
@@ -42,7 +43,7 @@ export const ConversationItem: React.FC<ConversationItemProps> = ({
                 title="Delete conversation"
                 id={`delete-conversation-${conversation.id}`}
             >
-                ✕
+                <Trash2 size={14} />
             </button>
         </div>
     )

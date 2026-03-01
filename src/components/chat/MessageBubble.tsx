@@ -1,47 +1,48 @@
 import React, { useState } from 'react'
+import {
+    Copy,
+    Check,
+    Share2,
+    RotateCcw,
+    Edit3,
+    User,
+    Bot,
+    AlertCircle
+} from 'lucide-react'
 
 import { MarkdownRenderer } from './MarkdownRenderer'
 import type { ChatMessage } from '../../types/chat.types'
 
 interface MessageBubbleProps {
     message: ChatMessage
+    onRetry?: (id: string) => void
+    onEdit?: (id: string, content: string) => void
+    isLast?: boolean
 }
 
-/** Copy icon (Lucide-style) */
-const CopyIcon: React.FC = () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
+interface DataCardProps {
+    title: string;
+    value: string;
+    type?: 'success' | 'error' | 'neutral';
+}
+
+const DataCard: React.FC<DataCardProps> = ({ title, value, type = 'neutral' }) => (
+    <div className={`data-card data-card--${type}`}>
+        <div className="data-card__title">{title}</div>
+        <div className="data-card__value">{value}</div>
+    </div>
 )
 
-/** Check icon for copied state */
-const CheckIcon: React.FC = () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="20 6 9 17 4 12" />
-    </svg>
-)
-
-/** Share icon (Lucide-style) */
-const ShareIcon: React.FC = () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-        <polyline points="16 6 12 2 8 6" />
-        <line x1="12" y1="2" x2="12" y2="15" />
-    </svg>
-)
-
-/** Regenerate icon */
-const RefreshIcon: React.FC = () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="23 4 23 10 17 10" />
-        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-    </svg>
-)
-
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({
+    message,
+    onRetry,
+    onEdit,
+    isLast
+}) => {
     const isUser = message.role === 'user'
     const [copied, setCopied] = useState(false)
+    const [isEditing, setIsEditing] = useState(false)
+    const [editContent, setEditContent] = useState(message.content)
 
     const handleCopy = (): void => {
         navigator.clipboard.writeText(message.content)
@@ -53,19 +54,27 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
         if (navigator.share) {
             navigator.share({ text: message.content })
         } else {
-            navigator.clipboard.writeText(message.content)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 2000)
+            handleCopy()
+        }
+    }
+
+    const handleEditSave = () => {
+        if (onEdit) {
+            onEdit(message.id, editContent)
+            setIsEditing(false)
         }
     }
 
     const hasImages = message.images && message.images.length > 0
+    const isError = (message as any).isError // We might need to flag failed messages
 
     return (
-        <div className={`message message--${message.role}`} id={`message-${message.id}`}>
+        <div className={`message message--${message.role} ${isError ? 'message--error' : ''}`} id={`message-${message.id}`}>
             <div className="message__wrapper">
-                {!isUser && (
-                    <div className="message__avatar message__avatar--assistant">AI</div>
+                {!isUser && message.role !== 'tool' && (
+                    <div className="message__avatar message__avatar--assistant">
+                        <Bot size={16} />
+                    </div>
                 )}
                 <div className={isUser ? 'message__bubble' : 'message__flat'}>
                     {/* Image attachments */}
@@ -76,7 +85,53 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                             ))}
                         </div>
                     )}
-                    {isUser ? (
+
+                    {isEditing ? (
+                        <div className="message__edit-container">
+                            <textarea
+                                className="message__edit-input"
+                                value={editContent}
+                                onChange={(e) => setEditContent(e.target.value)}
+                                autoFocus
+                            />
+                            <div className="message__edit-actions">
+                                <button onClick={() => setIsEditing(false)}>Cancel</button>
+                                <button onClick={handleEditSave} className="message__edit-save">Save & Retry</button>
+                            </div>
+                        </div>
+                    ) : message.role === 'tool' ? (
+                        <div className="message__tool-container">
+                            <div className="message__tool-header">Tool Feedback</div>
+                            <pre className="message__tool-content">{message.content}</pre>
+                        </div>
+                    ) : !isUser && message.content.trim().startsWith('{') && message.content.includes('"tool_call"') ? (
+                        <div className="message__content">
+                            {(() => {
+                                try {
+                                    const parsed = JSON.parse(message.content.trim())
+                                    if (parsed.tool_call) {
+                                        return (
+                                            <div className="message__tool-call">
+                                                <div className="message__tool-call-header">
+                                                    <RotateCcw size={14} className="message__tool-call-icon" />
+                                                    <span>AI is using a tool</span>
+                                                </div>
+                                                <div className="message__tool-call-body">
+                                                    <div className="message__tool-call-name">{parsed.tool_call.name}</div>
+                                                    <div className="message__tool-call-args">
+                                                        {JSON.stringify(parsed.tool_call.arguments, null, 2)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )
+                                    }
+                                } catch (e) {
+                                    // Fallback to markdown if parsing fails
+                                }
+                                return <MarkdownRenderer content={message.content} />
+                            })()}
+                        </div>
+                    ) : isUser ? (
                         <div className="message__content">{message.content}</div>
                     ) : (
                         <div className="message__content message__content--markdown">
@@ -85,16 +140,32 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                     )}
                 </div>
                 {isUser && (
-                    <div className="message__avatar message__avatar--user">U</div>
+                    <div className="message__avatar message__avatar--user">
+                        <User size={16} />
+                    </div>
                 )}
             </div>
+
             <div className={`message__actions ${isUser ? 'message__actions--right' : 'message__actions--left'}`}>
                 <button className="message__action-btn" onClick={handleCopy} title="Copy">
-                    {copied ? <CheckIcon /> : <CopyIcon />}
+                    {copied ? <Check size={14} /> : <Copy size={14} />}
                 </button>
+
+                {isUser && !isEditing && (
+                    <button className="message__action-btn" onClick={() => setIsEditing(true)} title="Edit">
+                        <Edit3 size={14} />
+                    </button>
+                )}
+
+                {isUser && isLast && (
+                    <button className="message__action-btn" onClick={() => onRetry?.(message.id)} title="Retry">
+                        <RotateCcw size={14} />
+                    </button>
+                )}
+
                 {!isUser && (
                     <button className="message__action-btn" onClick={handleShare} title="Share">
-                        <ShareIcon />
+                        <Share2 size={14} />
                     </button>
                 )}
             </div>
