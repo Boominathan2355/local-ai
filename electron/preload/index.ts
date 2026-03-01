@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '../ipc/channels'
 
-import type { AppSettings, McpServer } from '../../src/types/settings.types'
+import type { AppSettings } from '../../src/types/settings.types'
 import type { StreamTokenEvent } from '../../src/types/chat.types'
 import type { Conversation } from '../../src/types/conversation.types'
 import type { ChatMessage } from '../../src/types/chat.types'
@@ -9,13 +9,11 @@ import type { ModelStatus } from '../../src/types/model.types'
 
 export interface LocalAIApi {
     chat: {
-        sendMessage: (conversationId: string, content: string, systemPrompt: string, images?: string[]) => Promise<{ success?: boolean; error?: string }>
+        sendMessage: (conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean) => Promise<{ success?: boolean; error?: string }>
         stopGeneration: () => Promise<{ success: boolean }>
         onStreamToken: (callback: (event: StreamTokenEvent) => void) => () => void
-        onStreamComplete: (callback: (data: { conversationId: string; toolCall?: boolean }) => void) => () => void
+        onStreamComplete: (callback: (data: { conversationId: string }) => void) => () => void
         onStreamError: (callback: (data: { conversationId: string; error: string }) => void) => () => void
-        onToolCallPermissionRequested: (callback: (data: { requestId: string; toolName: string; arguments: any }) => void) => () => void
-        respondToToolCallPermission: (requestId: string, response: { allowed: boolean; always?: boolean }) => Promise<void>
     }
     conversations: {
         list: () => Promise<Conversation[]>
@@ -57,15 +55,6 @@ export interface LocalAIApi {
     setup: {
         getStatus: () => Promise<{ hasBinary: boolean; hasModel: boolean; binaryPath: string; modelPath: string | null }>
     }
-    mcp: {
-        getServers: () => Promise<McpServer[]>
-        addServer: (server: McpServer) => Promise<{ success: boolean }>
-        deleteServer: (id: string) => Promise<{ success: boolean }>
-        toggleServer: (id: string) => Promise<{ success: boolean }>
-        getTools: (serverId: string) => Promise<any[]>
-        getServerStatus: (serverId: string) => Promise<'connected' | 'error' | 'disconnected' | 'connecting'>
-        onServerStatusChanged: (callback: (data: { serverId: string; status: string }) => void) => () => void
-    }
     onSettingsChanged: (callback: (settings: AppSettings) => void) => () => void
 }
 
@@ -82,8 +71,8 @@ function createListener<T>(channel: string, callback: (data: T) => void): () => 
 
 const api: LocalAIApi = {
     chat: {
-        sendMessage: (conversationId, content, systemPrompt, images) =>
-            ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND_MESSAGE, conversationId, content, systemPrompt, images),
+        sendMessage: (conversationId, content, systemPrompt, images, searchEnabled) =>
+            ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND_MESSAGE, conversationId, content, systemPrompt, images, searchEnabled),
         stopGeneration: () =>
             ipcRenderer.invoke(IPC_CHANNELS.CHAT_STOP_GENERATION),
         onStreamToken: (callback) =>
@@ -91,13 +80,7 @@ const api: LocalAIApi = {
         onStreamComplete: (callback) =>
             createListener(IPC_CHANNELS.CHAT_STREAM_COMPLETE, callback),
         onStreamError: (callback) =>
-            createListener(IPC_CHANNELS.CHAT_STREAM_ERROR, callback),
-        onToolCallPermissionRequested: (callback) => {
-            const listener = (_event: any, data: any) => callback(data)
-            ipcRenderer.on(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_REQUESTED, listener)
-            return () => ipcRenderer.removeListener(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_REQUESTED, listener)
-        },
-        respondToToolCallPermission: (requestId, response) => ipcRenderer.invoke(IPC_CHANNELS.CHAT_TOOL_CALL_PERMISSION_RESPONSE, requestId, response)
+            createListener(IPC_CHANNELS.CHAT_STREAM_ERROR, callback)
     },
     conversations: {
         list: () => ipcRenderer.invoke(IPC_CHANNELS.CONVERSATION_LIST),
@@ -142,16 +125,6 @@ const api: LocalAIApi = {
     },
     setup: {
         getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_GET_STATUS)
-    },
-    mcp: {
-        getServers: () => ipcRenderer.invoke(IPC_CHANNELS.MCP_GET_SERVERS),
-        addServer: (server) => ipcRenderer.invoke(IPC_CHANNELS.MCP_ADD_SERVER, server),
-        deleteServer: (id) => ipcRenderer.invoke(IPC_CHANNELS.MCP_DELETE_SERVER, id),
-        toggleServer: (id) => ipcRenderer.invoke(IPC_CHANNELS.MCP_TOGGLE_SERVER, id),
-        getTools: (serverId) => ipcRenderer.invoke(IPC_CHANNELS.MCP_GET_TOOLS, serverId),
-        getServerStatus: (serverId) => ipcRenderer.invoke(IPC_CHANNELS.MCP_GET_SERVER_STATUS, serverId),
-        onServerStatusChanged: (callback) =>
-            createListener(IPC_CHANNELS.MCP_SERVER_STATUS_CHANGED, callback)
     },
     onSettingsChanged: (callback) =>
         createListener(IPC_CHANNELS.SETTINGS_CHANGED, callback)

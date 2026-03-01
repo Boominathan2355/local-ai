@@ -1,7 +1,8 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import path from 'path'
-
+import os from 'os'
+import { execSync } from 'child_process'
 import { EventEmitter } from 'events'
 
 import type { Conversation } from '../../src/types/conversation.types'
@@ -15,16 +16,32 @@ interface StorageData {
     settings: AppSettings
 }
 
+export interface SystemMetrics {
+    cpuUsagePercent: number
+    freeMemoryMB: number
+    totalMemoryMB: number
+}
+
+export interface SystemInfo {
+    totalRamMB: number
+    freeRamMB: number
+    cpuCores: number
+    diskFreeGB: number
+    diskTotalGB: number
+}
+
 const STORAGE_FILE = 'local-ai-data.json'
+const CPU_THRESHOLD_PERCENT = 90
+const MIN_FREE_MEMORY_MB = 500
 
 /**
- * JSON-file based persistence service.
- * Stores conversations, messages, and settings in Electron's userData directory.
- * No native dependencies — works on all platforms.
+ * JSON-file based persistence and system monitoring service.
+ * Stores app data and checks system health for local inference.
  */
 export class StorageService extends EventEmitter {
     private data: StorageData
     private readonly filePath: string
+    private isGenerating = false
 
     constructor() {
         super()
@@ -32,8 +49,50 @@ export class StorageService extends EventEmitter {
         mkdirSync(userDataPath, { recursive: true })
         this.filePath = path.join(userDataPath, STORAGE_FILE)
         this.data = this.load()
-        this.save() // Ensure merged servers are persisted
+        this.save()
     }
+
+    // --- Monitoring ---
+
+    getMetrics(): SystemMetrics {
+        const totalMemoryMB = Math.round(os.totalmem() / (1024 * 1024))
+        const freeMemoryMB = Math.round(os.freemem() / (1024 * 1024))
+        const cpus = os.cpus()
+        let totalIdle = 0
+        let totalTick = 0
+        for (const cpu of cpus) {
+            totalIdle += cpu.times.idle
+            totalTick += cpu.times.user + cpu.times.nice + cpu.times.sys + cpu.times.irq + cpu.times.idle
+        }
+        const cpuUsagePercent = Math.round(((totalTick - totalIdle) / totalTick) * 100)
+        return { cpuUsagePercent, freeMemoryMB, totalMemoryMB }
+    }
+
+    getSystemInfo(llamaDir?: string): SystemInfo {
+        const totalRamMB = Math.round(os.totalmem() / (1024 * 1024))
+        const freeRamMB = Math.round(os.freemem() / (1024 * 1024))
+        const cpuCores = os.cpus().length
+        let diskFreeGB = 0
+        let diskTotalGB = 0
+        try {
+            const dir = llamaDir ?? os.homedir()
+            const output = execSync(`df -BG "${dir}" | tail -1 | awk '{print $2 " " $4}'`, { encoding: 'utf-8', timeout: 3000 }).trim()
+            const [total, free] = output.split(/\s+/).map(v => parseFloat(v.replace('G', '')) || 0)
+            diskTotalGB = total
+            diskFreeGB = free
+        } catch { /* skip */ }
+        return { totalRamMB, freeRamMB, cpuCores, diskFreeGB, diskTotalGB }
+    }
+
+    canGenerate(): { allowed: boolean; reason?: string } {
+        if (this.isGenerating) return { allowed: false, reason: 'Already generating' }
+        const metrics = this.getMetrics()
+        if (metrics.cpuUsagePercent > CPU_THRESHOLD_PERCENT) return { allowed: false, reason: 'CPU usage too high' }
+        if (metrics.freeMemoryMB < MIN_FREE_MEMORY_MB) return { allowed: false, reason: 'Free memory too low' }
+        return { allowed: true }
+    }
+
+    setGenerating(v: boolean) { this.isGenerating = v }
 
     // --- Conversations ---
 
@@ -88,10 +147,6 @@ export class StorageService extends EventEmitter {
         this.save()
     }
 
-    /**
-     * Returns the last N messages that fit within the token budget
-     * for the rolling context window.
-     */
     getRollingContext(conversationId: string, maxTokens: number): ChatMessage[] {
         const messages = this.getMessages(conversationId)
         const result: ChatMessage[] = []
@@ -139,45 +194,21 @@ export class StorageService extends EventEmitter {
             if (existsSync(this.filePath)) {
                 const raw = readFileSync(this.filePath, 'utf-8')
                 const parsed = JSON.parse(raw)
-
-                // Ensure parsed.settings exists to avoid errors when accessing properties
                 const parsedSettings = parsed.settings || {}
-
-                const existingServers = parsedSettings.mcpServers || []
-                const defaultServers = DEFAULT_SETTINGS.mcpServers || []
-
-                // Merge servers: keep existing ones, add missing default ones
-                const mergedServers = [...existingServers]
-                for (const defServer of defaultServers) {
-                    if (!mergedServers.some(s => s.id === defServer.id)) {
-                        mergedServers.push(defServer)
-                    }
-                }
 
                 return {
                     conversations: parsed.conversations || [],
                     messages: parsed.messages || {},
                     settings: {
                         ...DEFAULT_SETTINGS,
-                        ...parsedSettings,
-                        apiKeys: {
-                            ...DEFAULT_SETTINGS.apiKeys,
-                            ...(parsedSettings.apiKeys || {})
-                        },
-                        activatedCloudModels: parsedSettings.activatedCloudModels || [],
-                        mcpServers: mergedServers
+                        ...parsedSettings
                     }
                 }
             }
         } catch (err) {
-            console.error('[StorageService] Failed to load data, starting fresh:', err)
+            console.error('[StorageService] Failed to load data:', err)
         }
-
-        return {
-            conversations: [],
-            messages: {},
-            settings: { ...DEFAULT_SETTINGS }
-        }
+        return { conversations: [], messages: {}, settings: { ...DEFAULT_SETTINGS } }
     }
 
     private save(): void {

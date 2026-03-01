@@ -1,5 +1,5 @@
 import React from 'react'
-import { Plus, Puzzle, Settings2, User, Library } from 'lucide-react'
+import { Plus, Settings2, User, Library, Bot } from 'lucide-react'
 
 import { ConversationItem } from './ConversationItem'
 import type { Conversation } from '../../types/conversation.types'
@@ -12,7 +12,6 @@ interface ConversationSidebarProps {
     onDeleteConversation: (id: string) => void
     onNewChat: () => void
     onOpenSettings: () => void
-    onOpenMcp: () => void
     onOpenLibrary: () => void
     onOpenUser: () => void
     settings: AppSettings
@@ -25,7 +24,6 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     onDeleteConversation,
     onNewChat,
     onOpenSettings,
-    onOpenMcp,
     onOpenLibrary,
     onOpenUser,
     settings
@@ -35,7 +33,7 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
             <div className="sidebar__brand">
                 <div className="sidebar__brand-logo">
                     <div className="sidebar__logo-box">
-                        <Puzzle size={20} color="#fff" />
+                        <Bot size={20} color="#fff" />
                     </div>
                     <div className="sidebar__brand-info">
                         <div className="sidebar__brand-name">Local AI</div>
@@ -84,14 +82,6 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                 >
                     <Library size={16} style={{ color: 'var(--text-tertiary)' }} />
                     <span>Model Library</span>
-                </button>
-                <button
-                    className="sidebar__footer-btn"
-                    onClick={onOpenMcp}
-                    id="mcp-btn"
-                >
-                    <Puzzle size={16} style={{ color: 'var(--text-tertiary)' }} />
-                    <span>MCP</span>
                 </button>
                 <button
                     className="sidebar__footer-btn"

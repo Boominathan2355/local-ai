@@ -4,9 +4,9 @@ import { is } from '@electron-toolkit/utils'
 
 import { LlamaServerService } from '../services/llama-server.service'
 import { StorageService } from '../services/storage.service'
-import { SystemMonitorService } from '../services/system-monitor.service'
 import { DownloadService } from '../services/download.service'
-import { McpService } from '../services/mcp.service'
+import { SearchService } from '../services/search.service'
+import { CloudModelService } from '../services/cloud-model.service'
 import { registerIpcHandlers } from '../ipc/handlers'
 import { IPC_CHANNELS } from '../ipc/channels'
 
@@ -20,10 +20,9 @@ const WINDOW_CONFIG = {
 let mainWindow: BrowserWindow | null = null
 let llamaServer: LlamaServerService | null = null
 let storage: StorageService | null = null
-let systemMonitor: SystemMonitorService | null = null
 let downloadService: DownloadService | null = null
-let mcpService: McpService | null = null
-
+let searchService: SearchService | null = null
+let cloudModelService: CloudModelService | null = null
 
 function createWindow(): void {
     mainWindow = new BrowserWindow({
@@ -59,20 +58,17 @@ function createWindow(): void {
     }
 }
 
-/**
- * Initializes all services and registers IPC handlers.
- */
 function initServices(): void {
     storage = new StorageService()
-    systemMonitor = new SystemMonitorService()
 
     const llamaBasePath = is.dev
         ? join(__dirname, '../../llama')
         : join(process.resourcesPath, 'llama')
 
     downloadService = new DownloadService(llamaBasePath)
+    searchService = new SearchService()
+    cloudModelService = new CloudModelService()
 
-    // Resolve model path dynamically: use first available downloaded model
     const initialModelPath = downloadService.getFirstAvailableModelPath()
     let initialModelId: string | null = null
 
@@ -91,70 +87,39 @@ function initServices(): void {
         mainWindow?.webContents.send(IPC_CHANNELS.MODEL_STATUS_CHANGED, status)
     })
 
-    llamaServer.on('error', (error) => {
-        console.error('[LlamaServer]', error)
-    })
+    llamaServer.on('error', (error) => console.error('[LlamaServer]', error))
 
     llamaServer.on('log', (log) => {
-        if (is.dev) {
-            console.log('[LlamaServer]', log)
-        }
+        if (is.dev) console.log('[LlamaServer]', log)
     })
 
-    if (storage) {
-        mcpService = new McpService(storage)
-    } else {
-        // Fallback or early error handling
-        mcpService = new McpService(new StorageService())
+    if (llamaServer && storage && downloadService && searchService && cloudModelService) {
+        registerIpcHandlers(llamaServer, storage, downloadService, searchService, cloudModelService, initialModelId)
     }
-
-    registerIpcHandlers(llamaServer, storage, systemMonitor, downloadService, mcpService, initialModelId)
-
-    mcpService.on('statusChanged', (serverId, status) => {
-        mainWindow?.webContents.send(IPC_CHANNELS.MCP_SERVER_STATUS_CHANGED, { serverId, status })
-    })
 
     storage.on('settingsChanged', (settings) => {
         mainWindow?.webContents.send(IPC_CHANNELS.SETTINGS_CHANGED, settings)
     })
 
-    // Only auto-start if both binary and model exist
     if (downloadService.isBinaryDownloaded() && initialModelPath) {
-        llamaServer.start().catch((err) => {
-            console.error('[LlamaServer] Failed to start:', err)
-        })
+        llamaServer.start().catch((err) => console.error('[LlamaServer] Failed to start:', err))
     }
 }
 
-/**
- * Graceful shutdown: stop generation, kill llama.cpp, close DB.
- */
 async function gracefulShutdown(): Promise<void> {
-    if (llamaServer) {
-        await llamaServer.stop()
-    }
-    if (mcpService) {
-        await mcpService.shutdown()
-    }
+    if (llamaServer) await llamaServer.stop()
 }
-
-// --- App Lifecycle ---
 
 app.whenReady().then(() => {
     initServices()
     createWindow()
-
     app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
-            createWindow()
-        }
+        if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
 })
 
 app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.quit()
-    }
+    if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', async (event) => {

@@ -356,8 +356,8 @@
     padding: 8px 0;
 }
 
-.settings-row__label {
-    flex: 1;
+.settings-row > .settings-row__label {
+    flex: 0 0 280px;
 }
 
 .settings-row__title {
@@ -431,6 +431,7 @@
     color: var(--text-primary);
     font-size: 14px;
     width: 100%;
+    flex: 1;
 }
 
 .settings-select--compact {
@@ -534,17 +535,17 @@
 
 .settings-field__textarea {
     width: 100%;
-    min-height: 120px;
-    padding: 12px;
+    min-height: 240px;
+    padding: 16px;
     background: var(--bg-primary);
     border: 1px solid var(--border-main);
     border-radius: var(--radius-md);
     color: var(--text-primary);
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.6;
     resize: vertical;
     outline: none;
-    transition: border-color var(--transition-fast);
+    transition: all var(--transition-fast);
 }
 
 .settings-field__textarea:focus {
@@ -606,6 +607,26 @@
     border-color: var(--accent-primary);
     box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.2);
     background: var(--bg-primary);
+}
+
+.custom-prompt-container {
+    position: relative;
+    display: flex;
+    gap: 16px;
+}
+
+.custom-prompt-icon {
+    position: absolute;
+    left: 16px;
+    top: 16px;
+    color: var(--accent-primary);
+    opacity: 0.6;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.custom-prompt-container .settings-field__textarea {
+    padding-left: 48px;
 }
 
 .custom-prompt-header {

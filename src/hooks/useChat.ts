@@ -9,13 +9,11 @@ interface UseChatReturn {
     streamingContent: string
     isStreaming: boolean
     error: string | null
-    sendMessage: (content: string, images?: string[]) => void
+    sendMessage: (content: string, options?: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean }) => void
     stopGeneration: () => void
     clearError: () => void
     retryMessage: (messageId: string) => void
     resendLastMessage: () => void
-    pendingToolCall: { requestId: string; toolName: string; arguments: any } | null
-    respondToToolCall: (allowed: boolean, always?: boolean) => void
 }
 
 /**
@@ -26,7 +24,6 @@ export function useChat(conversationId: string | null): UseChatReturn {
     const [streamingContent, setStreamingContent] = useState('')
     const [isStreaming, setIsStreaming] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [pendingToolCall, setPendingToolCall] = useState<{ requestId: string; toolName: string; arguments: any } | null>(null)
 
     const streamingRef = useRef(false)
     const cleanupRef = useRef<Array<() => void>>([])
@@ -63,10 +60,8 @@ export function useChat(conversationId: string | null): UseChatReturn {
 
         const cleanupComplete = api.chat.onStreamComplete((data) => {
             if (data.conversationId === conversationId) {
-                if (!data.toolCall) {
-                    streamingRef.current = false
-                    setIsStreaming(false)
-                }
+                streamingRef.current = false
+                setIsStreaming(false)
                 setStreamingContent('')
 
                 // Reload messages to get the saved assistant message
@@ -89,23 +84,17 @@ export function useChat(conversationId: string | null): UseChatReturn {
             if (data.conversationId === conversationId) {
                 if (data.message) {
                     setMessages((prev) => {
-                        // 1. If we find an exact ID match, do nothing (already handled or identical)
                         if (prev.some(m => m.id === data.message!.id)) return prev
-
-                        // 2. If this is a real message from backend that matches an optimistic message, replace it
                         const optimisticIndex = prev.findIndex(m =>
                             m.id.startsWith('temp-') &&
                             m.role === data.message!.role &&
                             m.content === data.message!.content
                         )
-
                         if (optimisticIndex !== -1) {
                             const newMessages = [...prev]
                             newMessages[optimisticIndex] = data.message!
                             return newMessages
                         }
-
-                        // 3. Otherwise, append new message
                         return [...prev, data.message!]
                     })
                 } else {
@@ -116,11 +105,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
             }
         })
 
-        const cleanupToolCallPermission = api.chat.onToolCallPermissionRequested((data) => {
-            setPendingToolCall(data)
-        })
-
-        cleanupRef.current = [cleanupToken, cleanupComplete, cleanupError, cleanupMessagesUpdated, cleanupToolCallPermission]
+        cleanupRef.current = [cleanupToken, cleanupComplete, cleanupError, cleanupMessagesUpdated]
 
         return () => {
             cleanupRef.current.forEach((fn) => fn())
@@ -129,8 +114,8 @@ export function useChat(conversationId: string | null): UseChatReturn {
     }, [conversationId])
 
     const sendMessage = useCallback(
-        (content: string, images?: string[]) => {
-            if (!conversationId || streamingRef.current || (!content.trim() && !images?.length)) return
+        (content: string, options?: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean }) => {
+            if (!conversationId || streamingRef.current || (!content.trim() && !options?.images?.length)) return
 
             const api = getLocalAI()
             if (!api) return
@@ -140,26 +125,26 @@ export function useChat(conversationId: string | null): UseChatReturn {
             setIsStreaming(true)
             setStreamingContent('')
 
-            // Optimistically add user message to UI
             const optimisticId = `temp-${Date.now()}`
             const optimisticMessage: ChatMessage = {
                 id: optimisticId,
                 conversationId,
                 role: 'user',
                 content: content.trim(),
-                tokenCount: Math.ceil((content.trim().length + (images?.length || 0) * 100) / 4),
+                tokenCount: Math.ceil((content.trim().length + (options?.images?.length || 0) * 100) / 4),
                 createdAt: Date.now(),
-                images
+                images: options?.images
             }
             setMessages((prev) => [...prev, optimisticMessage])
 
-            api.chat.sendMessage(conversationId, content.trim(), DEFAULT_SYSTEM_PROMPT, images).then((result) => {
+            if (!api) return
+
+            // @ts-ignore - Updating signature in next steps
+            api.chat.sendMessage(conversationId, content.trim(), options?.systemPrompt || DEFAULT_SYSTEM_PROMPT, options?.images, options?.searchEnabled).then((result) => {
                 if (result.error) {
                     setError(result.error)
                     streamingRef.current = false
                     setIsStreaming(false)
-                    // Remove the optimistic message on error? Or just leave it and show error.
-                    // For now, let's leave it so user can copy it back.
                 }
             })
         },
@@ -170,10 +155,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
         (messageId: string) => {
             const message = messages.find((m) => m.id === messageId)
             if (!message || message.role !== 'user') return
-
-            // If it's a failed message at the end, we might want to "replace" it or just re-send
-            // For simplicity, we'll re-send the content
-            sendMessage(message.content, message.images)
+            sendMessage(message.content, { images: message.images })
         },
         [messages, sendMessage]
     )
@@ -181,7 +163,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
     const resendLastMessage = useCallback(() => {
         const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user')
         if (lastUserMessage) {
-            sendMessage(lastUserMessage.content, lastUserMessage.images)
+            sendMessage(lastUserMessage.content, { images: lastUserMessage.images })
         }
     }, [messages, sendMessage])
 
@@ -193,15 +175,6 @@ export function useChat(conversationId: string | null): UseChatReturn {
 
     const clearError = useCallback(() => setError(null), [])
 
-    const respondToToolCall = useCallback((allowed: boolean, always?: boolean) => {
-        if (!pendingToolCall) return
-        const api = getLocalAI()
-        if (api) {
-            api.chat.respondToToolCallPermission(pendingToolCall.requestId, { allowed, always })
-            setPendingToolCall(null)
-        }
-    }, [pendingToolCall])
-
     return {
         messages,
         streamingContent,
@@ -211,8 +184,6 @@ export function useChat(conversationId: string | null): UseChatReturn {
         stopGeneration,
         clearError,
         retryMessage,
-        resendLastMessage,
-        pendingToolCall,
-        respondToToolCall
+        resendLastMessage
     }
 }

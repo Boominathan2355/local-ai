@@ -14,6 +14,7 @@ export interface DownloadableModel {
     url: string
     filename: string
     tier: 'ultra-light' | 'light' | 'medium' | 'heavy' | 'custom' | 'agent'
+    provider?: 'local' | 'openai' | 'anthropic' | 'google'
 }
 
 export interface DownloadProgress {
@@ -48,7 +49,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 4,
         url: 'https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
         filename: 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
-        tier: 'ultra-light'
+        tier: 'ultra-light',
+        provider: 'local'
     },
     {
         id: 'llama3.2-1b',
@@ -58,7 +60,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 4,
         url: 'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf',
         filename: 'Llama-3.2-1B-Instruct-Q4_K_M.gguf',
-        tier: 'ultra-light'
+        tier: 'ultra-light',
+        provider: 'local'
     },
 
     // Light Tier (6 GB RAM)
@@ -70,7 +73,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 6,
         url: 'https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf',
         filename: 'gemma-2-2b-it-Q4_K_M.gguf',
-        tier: 'light'
+        tier: 'light',
+        provider: 'local'
     },
     {
         id: 'llama3.2-3b',
@@ -80,7 +84,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 6,
         url: 'https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf',
         filename: 'Llama-3.2-3B-Instruct-Q4_K_M.gguf',
-        tier: 'light'
+        tier: 'light',
+        provider: 'local'
     },
     {
         id: 'phi-3.5-mini',
@@ -90,7 +95,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 6,
         url: 'https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf',
         filename: 'Phi-3.5-mini-instruct-Q4_K_M.gguf',
-        tier: 'light'
+        tier: 'light',
+        provider: 'local'
     },
 
     // Medium Tier (10–12 GB RAM)
@@ -102,7 +108,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 10,
         url: 'https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
         filename: 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
-        tier: 'medium'
+        tier: 'medium',
+        provider: 'local'
     },
     {
         id: 'qwen2.5-7b',
@@ -112,7 +119,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 10,
         url: 'https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
         filename: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf',
-        tier: 'medium'
+        tier: 'medium',
+        provider: 'local'
     },
     {
         id: 'qwen2.5-coder-7b',
@@ -122,7 +130,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 10,
         url: 'https://huggingface.co/bartowski/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf',
         filename: 'Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf',
-        tier: 'medium'
+        tier: 'medium',
+        provider: 'local'
     },
     {
         id: 'llama3.1-8b',
@@ -132,7 +141,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 12,
         url: 'https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
         filename: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
-        tier: 'medium'
+        tier: 'medium',
+        provider: 'local'
     },
 
     // Heavy Tier (16 GB RAM)
@@ -144,7 +154,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 16,
         url: 'https://huggingface.co/TheBloke/CodeLlama-13B-Instruct-GGUF/resolve/main/codellama-13b-instruct.Q4_K_M.gguf',
         filename: 'codellama-13b-instruct.Q4_K_M.gguf',
-        tier: 'heavy'
+        tier: 'heavy',
+        provider: 'local'
     },
     // Custom & Agent Tiers
     {
@@ -155,77 +166,153 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 0,
         url: '',
         filename: 'custom',
-        tier: 'custom'
+        tier: 'custom',
+        provider: 'local'
     },
     {
         id: 'codestral-agent',
-        name: 'Codestral Agent',
-        description: 'Mistral\'s specialized model for coding tasks. Optimized for high-quality tool execution.',
+        name: 'Codestral 22B',
+        description: 'Mistral\'s specialized model for coding tasks. Optimized for high-quality logic and code generation.',
         sizeGB: 11.2,
         ramRequired: 24,
         url: 'https://huggingface.co/bartowski/Codestral-22B-v0.1-GGUF/resolve/main/Codestral-22B-v0.1-Q4_K_M.gguf',
         filename: 'Codestral-22B-v0.1-Q4_K_M.gguf',
-        tier: 'agent'
+        tier: 'agent',
+        provider: 'local'
     },
     {
         id: 'qwen2.5-7b-agent',
-        name: 'Qwen2.5 7B Agent',
-        description: 'Stable and reliable agent for precise filesystem operations and MCP tool control.',
+        name: 'Qwen 2.5 7B High-IQ',
+        description: 'Stable and reliable model for precise logical operations and reasoning.',
         sizeGB: 4.7,
         ramRequired: 12,
         url: 'https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf',
         filename: 'Qwen2.5-7B-Instruct-Q4_K_M.gguf',
-        tier: 'agent'
+        tier: 'agent',
+        provider: 'local'
     },
     {
         id: 'deepseek-v2-lite-agent',
-        name: 'DeepSeek-V2 Lite Agent',
-        description: 'Multi-tool reasoning expert. Efficient MoE architecture for stable agentic flows.',
+        name: 'DeepSeek-V2 Lite',
+        description: 'Multi-task reasoning expert. Efficient MoE architecture for stable performance.',
         sizeGB: 9.5,
         ramRequired: 16,
         url: 'https://huggingface.co/bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF/resolve/main/DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf',
         filename: 'DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf',
-        tier: 'agent'
+        tier: 'agent',
+        provider: 'local'
     },
     {
         id: 'yi-1.5-9b-agent',
-        name: 'Yi-1.5 9B Agent',
+        name: 'Yi-1.5 9B',
         description: 'Enhanced reasoning capabilities for multi-step logical tasks and planning.',
         sizeGB: 5.4,
         ramRequired: 16,
         url: 'https://huggingface.co/bartowski/Yi-1.5-9B-Chat-GGUF/resolve/main/Yi-1.5-9B-Chat-Q4_K_M.gguf',
         filename: 'Yi-1.5-9B-Chat-Q4_K_M.gguf',
-        tier: 'agent'
+        tier: 'agent',
+        provider: 'local'
     },
     {
         id: 'llama-3.1-8b-agent',
-        name: 'Llama 3.1 8B Agent',
-        description: 'Most versatile open-source agent model. High context awareness and logic.',
+        name: 'Llama 3.1 8B (Adv)',
+        description: 'Most versatile small model. High context awareness and advanced logic.',
         sizeGB: 4.9,
         ramRequired: 12,
         url: 'https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
         filename: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
-        tier: 'agent'
+        tier: 'agent',
+        provider: 'local'
     },
     {
         id: 'deepseek-coder-6.7b-agent',
-        name: 'DeepSeek-Coder 6.7B Agent',
-        description: 'Coding-heavy automation specialist. Optimized for deep repo analysis and refactoring.',
+        name: 'DeepSeek-Coder 6.7B',
+        description: 'Coding automation specialist. Optimized for repository analysis and refactoring.',
         sizeGB: 4.1,
         ramRequired: 12,
         url: 'https://huggingface.co/TheBloke/deepseek-coder-6.7B-instruct-GGUF/resolve/main/deepseek-coder-6.7b-instruct.Q4_K_M.gguf',
         filename: 'deepseek-coder-6.7b-instruct.Q4_K_M.gguf',
-        tier: 'agent'
+        tier: 'agent',
+        provider: 'local'
     },
     {
         id: 'phi-3-mini-agent',
-        name: 'Phi-3 Mini Agent',
+        name: 'Phi-3 Mini',
         description: 'Lightweight and ultra-fast Microsoft model. Powerful reasoning for its size.',
         sizeGB: 2.3,
         ramRequired: 8,
         url: 'https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf',
         filename: 'Phi-3-mini-4k-instruct-Q4_K_M.gguf',
-        tier: 'agent'
+        tier: 'agent',
+        provider: 'local'
+    },
+
+    // Cloud Models
+    {
+        id: 'gpt-4o',
+        name: 'GPT-4o',
+        description: 'OpenAI\'s most advanced model. Extremely fast and intelligent.',
+        sizeGB: 0,
+        ramRequired: 0,
+        url: '',
+        filename: 'cloud-openai-gpt-4o',
+        tier: 'heavy',
+        provider: 'openai'
+    },
+    {
+        id: 'gpt-3.5-turbo',
+        name: 'GPT-3.5 Turbo',
+        description: 'OpenAI\'s efficient and capable model for everyday tasks.',
+        sizeGB: 0,
+        ramRequired: 0,
+        url: '',
+        filename: 'cloud-openai-gpt-3.5',
+        tier: 'light',
+        provider: 'openai'
+    },
+    {
+        id: 'claude-3-5-sonnet',
+        name: 'Claude 3.5 Sonnet',
+        description: 'Anthropic\'s most intelligent model. Exceptional at coding and reasoning.',
+        sizeGB: 0,
+        ramRequired: 0,
+        url: '',
+        filename: 'cloud-anthropic-claude-3-5-sonnet',
+        tier: 'heavy',
+        provider: 'anthropic'
+    },
+    {
+        id: 'claude-3-opus',
+        name: 'Claude 3 Opus',
+        description: 'Anthropic\'s powerful model for highly complex tasks.',
+        sizeGB: 0,
+        ramRequired: 0,
+        url: '',
+        filename: 'cloud-anthropic-claude-3-opus',
+        tier: 'heavy',
+        provider: 'anthropic'
+    },
+    {
+        id: 'gemini-1.5-pro',
+        name: 'Gemini 1.5 Pro',
+        description: 'Google\'s highly capable model with massive context window.',
+        sizeGB: 0,
+        ramRequired: 0,
+        url: '',
+        filename: 'cloud-google-gemini-1.5-pro',
+        tier: 'heavy',
+        provider: 'google'
+    },
+    {
+        id: 'gemini-1.5-flash',
+        name: 'Gemini 1.5 Flash',
+        description: 'Google\'s fastest and most cost-efficient model.',
+        sizeGB: 0,
+        ramRequired: 0,
+        url: '',
+        filename: 'cloud-google-gemini-1.5-flash',
+        tier: 'light',
+        provider: 'google'
     }
 ]
 

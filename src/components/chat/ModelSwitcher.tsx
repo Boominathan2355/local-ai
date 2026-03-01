@@ -56,8 +56,8 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
     }, [])
 
     const readyModels = allModels.filter((m: Model) => {
-        if (m.provider) {
-            return settings.activatedCloudModels.includes(m.id)
+        if (m.provider && m.provider !== 'local') {
+            return (settings.enabledCloudModels || []).includes(m.id)
         }
         return !!m.downloaded
     })

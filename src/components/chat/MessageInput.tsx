@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 
 interface MessageInputProps {
-    onSend: (content: string, images?: string[]) => void
+    onSend: (content: string, images?: string[], searchEnabled?: boolean) => void
     onStop: () => void
     isStreaming: boolean
     disabled: boolean
@@ -15,6 +15,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 }) => {
     const [value, setValue] = useState('')
     const [images, setImages] = useState<string[]>([])
+    const [isSearchEnabled, setIsSearchEnabled] = useState(false)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -58,7 +59,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         const trimmed = value.trim()
         if ((!trimmed && images.length === 0) || disabled) return
 
-        onSend(trimmed, images.length > 0 ? images : undefined)
+        onSend(trimmed, images.length > 0 ? images : undefined, isSearchEnabled)
         setValue('')
         setImages([])
 
@@ -117,7 +118,10 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                     <div className="chat__input-tools-left">
                         <button className="chat__tool-icon" onClick={() => fileInputRef.current?.click()}>📎</button>
                         <div className="chat__tool-divider"></div>
-                        <button className="chat__web-search">
+                        <button
+                            className={`chat__web-search ${isSearchEnabled ? 'chat__web-search--active' : ''}`}
+                            onClick={() => setIsSearchEnabled(!isSearchEnabled)}
+                        >
                             <span className="chat__web-search-icon">🌐</span>
                             <span>Web Search</span>
                         </button>
@@ -145,7 +149,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                 />
             </div>
             <div className="chat__footer-disclaimer">
-                    AI can make mistakes. Verify Important Information.
+                AI can make mistakes. Verify Important Information.
             </div>
         </div>
     )

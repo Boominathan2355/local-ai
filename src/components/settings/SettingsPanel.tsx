@@ -9,14 +9,11 @@ import {
     X,
     Settings2,
     Brain,
-    Key,
-    Users,
-    CreditCard,
-    Sparkles
+    Sparkles,
+    Key
 } from 'lucide-react'
 
 import { SystemPromptEditor } from './SystemPromptEditor'
-import { ModelStatusIndicator } from '../status/ModelStatusIndicator'
 
 import type { AppSettings } from '../../types/settings.types'
 import type { ModelStatusType } from '../../types/model.types'
@@ -105,7 +102,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         <div className="settings-divider" />
 
                         <div className="settings-group">
-                            <div className="settings-row__label">
+                            <div className="settings-group__label-block">
                                 <div className="settings-row__title">System Prompt</div>
                                 <div className="settings-row__desc">Configure the base personality and behavioral constraints of the AI.</div>
                             </div>
@@ -152,59 +149,90 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                         </div>
                     </div>
                 )
-            case 'keys':
+            case 'api-keys':
                 return (
                     <div className="settings-section">
                         <div className="settings-section__header">
                             <h3 className="settings-section__title">API Keys</h3>
-                            <p className="settings-section__subtitle">Securely manage your connection to cloud providers.</p>
+                            <p className="settings-section__subtitle">Manage your external service credentials. These are stored locally on your device.</p>
                         </div>
 
                         <div className="settings-divider" />
 
-                        <div className="settings-group">
-                            <label>OpenAI API Key</label>
+                        <div className="settings-row">
+                            <div className="settings-row__label">
+                                <div className="settings-row__title">Tavily API Key (Primary)</div>
+                                <div className="settings-row__desc">Recommended for better AI search results. Get one at <a href="https://tavily.com" target="_blank" rel="noopener noreferrer">tavily.com</a></div>
+                            </div>
                             <input
                                 type="password"
-                                className="settings-input"
+                                className="settings-input settings-input--wide"
+                                value={settings.tavilyApiKey || ''}
+                                onChange={(e) => onUpdateSettings({ tavilyApiKey: e.target.value })}
+                                placeholder="tvly-..."
+                            />
+                        </div>
+
+                        <div className="settings-row">
+                            <div className="settings-row__label">
+                                <div className="settings-row__title">Serper.dev API Key (Secondary)</div>
+                                <div className="settings-row__desc">Required for Web Search functionality. Get one at <a href="https://serper.dev" target="_blank" rel="noopener noreferrer">serper.dev</a></div>
+                            </div>
+                            <input
+                                type="password"
+                                className="settings-input settings-input--wide"
+                                value={settings.serperApiKey || ''}
+                                onChange={(e) => onUpdateSettings({ serperApiKey: e.target.value })}
+                                placeholder="Enter your Serper API Key"
+                            />
+                        </div>
+
+                        <div className="settings-divider" />
+
+                        <div className="settings-section-header">Cloud Providers</div>
+                        <p className="settings-section-desc">Manage keys for cloud-based AI models.</p>
+
+                        <div className="settings-row">
+                            <div className="settings-row__label">
+                                <div className="settings-row__title">OpenAI API Key</div>
+                                <div className="settings-row__desc">Used for GPT-4o and GPT-3.5 models. Get one at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">openai.com</a></div>
+                            </div>
+                            <input
+                                type="password"
+                                className="settings-input settings-input--wide"
+                                value={settings.openaiApiKey || ''}
+                                onChange={(e) => onUpdateSettings({ openaiApiKey: e.target.value })}
                                 placeholder="sk-..."
-                                value={settings.apiKeys?.openai || ''}
-                                onChange={(e) => onUpdateSettings({ apiKeys: { ...settings.apiKeys, openai: e.target.value } })}
                             />
                         </div>
-                        <div className="settings-group">
-                            <label>Anthropic API Key</label>
+
+                        <div className="settings-row">
+                            <div className="settings-row__label">
+                                <div className="settings-row__title">Anthropic API Key</div>
+                                <div className="settings-row__desc">Used for Claude 3.5 Sonnet and Opus. Get one at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">anthropic.com</a></div>
+                            </div>
                             <input
                                 type="password"
-                                className="settings-input"
+                                className="settings-input settings-input--wide"
+                                value={settings.anthropicApiKey || ''}
+                                onChange={(e) => onUpdateSettings({ anthropicApiKey: e.target.value })}
                                 placeholder="sk-ant-..."
-                                value={settings.apiKeys?.anthropic || ''}
-                                onChange={(e) => onUpdateSettings({ apiKeys: { ...settings.apiKeys, anthropic: e.target.value } })}
                             />
                         </div>
-                        <div className="settings-group">
-                            <label>Google Gemini API Key</label>
+
+                        <div className="settings-row">
+                            <div className="settings-row__label">
+                                <div className="settings-row__title">Gemini API Key</div>
+                                <div className="settings-row__desc">Used for Gemini 1.5 Pro and Flash. Get one at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com</a></div>
+                            </div>
                             <input
                                 type="password"
-                                className="settings-input"
-                                placeholder="AIza..."
-                                value={settings.apiKeys?.google || ''}
-                                onChange={(e) => onUpdateSettings({ apiKeys: { ...settings.apiKeys, google: e.target.value } })}
+                                className="settings-input settings-input--wide"
+                                value={settings.geminiApiKey || ''}
+                                onChange={(e) => onUpdateSettings({ geminiApiKey: e.target.value })}
+                                placeholder="Enter your Gemini API key"
                             />
                         </div>
-                    </div>
-                )
-            case 'team':
-                return (
-                    <div className="settings-section">
-                        <div className="settings-section__header">
-                            <h3 className="settings-section__title">Team Access</h3>
-                            <p className="settings-section__subtitle">Manage team members and their permissions.</p>
-                        </div>
-                        <div className="settings-divider" />
-                        <p style={{ color: 'var(--text-tertiary)', fontSize: '14px' }}>
-                            Team management features are coming soon.
-                        </p>
                     </div>
                 )
         }
@@ -259,18 +287,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                                 <span>AI Configuration</span>
                             </button>
                             <button
-                                className={`settings-nav-item ${activeTab === 'keys' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('keys')}
+                                className={`settings-nav-item ${activeTab === 'api-keys' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('api-keys')}
                             >
                                 <span className="settings-nav-icon"><Key size={16} /></span>
                                 <span>API Keys</span>
-                            </button>
-                            <button
-                                className={`settings-nav-item ${activeTab === 'team' ? 'active' : ''}`}
-                                onClick={() => setActiveTab('team')}
-                            >
-                                <span className="settings-nav-icon"><Users size={16} /></span>
-                                <span>Team Access</span>
                             </button>
                         </nav>
 

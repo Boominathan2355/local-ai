@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Local AI Assistant
+Exec=AppRun
+Icon=local-ai-assistant
+Type=Application
+Categories=Utility;
+StartupWMClass=local-ai-assistant

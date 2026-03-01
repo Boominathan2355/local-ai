@@ -17,11 +17,9 @@ import { MessageInput } from './MessageInput'
 import { ModelSwitcher } from './ModelSwitcher'
 import { MarkdownRenderer } from './MarkdownRenderer'
 
-import { ApiKeyPrompt } from './ApiKeyPrompt'
-import { ToolCallPermission } from './ToolCallPermission'
 
 import type { ChatMessage } from '../../types/chat.types'
-import type { AppSettings, ApiProvider } from '../../types/settings.types'
+import type { AppSettings } from '../../types/settings.types'
 
 const HINT_PROMPTS = [
     'Explain how async/await works in JavaScript',
@@ -45,8 +43,6 @@ interface ChatWindowProps {
     onUpdateSettings: (changes: Partial<AppSettings>) => void
     onRetryMessage: (id: string) => void
     onResendLast: () => void
-    pendingToolCall: { requestId: string; toolName: string; arguments: any } | null
-    onRespondToToolCall: (allowed: boolean, always?: boolean) => void
     activeModelName?: string | null
     activeModelTier?: string | null
 }
@@ -66,22 +62,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     onUpdateSettings,
     onRetryMessage,
     onResendLast,
-    pendingToolCall,
-    onRespondToToolCall,
     activeModelName,
     activeModelTier
 }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
-
-    // Determine if the current model needs an API key
-    const activeModel = activeModelId?.toLowerCase() || ''
-    const needsApiKey = (activeModel.includes('gpt') && !settings.apiKeys?.openai) ||
-        ((activeModel.includes('claude') || activeModel.includes('sonnet') || activeModel.includes('haiku')) && !settings.apiKeys?.anthropic) ||
-        ((activeModel.includes('gemini') || activeModel.includes('google')) && !settings.apiKeys?.google)
-
-    const provider: ApiProvider = activeModel.includes('gpt') ? 'openai' :
-        (activeModel.includes('claude') || activeModel.includes('sonnet') || activeModel.includes('haiku')) ? 'anthropic' : 'google'
 
     const isAgentMode = activeModelTier === 'agent'
 
@@ -135,15 +120,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                 )}
             </div>
 
-            {needsApiKey ? (
-                <div className="chat__empty">
-                    <ApiKeyPrompt
-                        provider={provider}
-                        onSave={(key) => onUpdateSettings({ apiKeys: { ...settings.apiKeys, [provider]: key } })}
-                        onCancel={() => onSwitchModel('llama-3.1-8b', 'Llama 3.1 8B')} // Fallback to a local model
-                    />
-                </div>
-            ) : !hasMessages ? (
+            {!hasMessages ? (
                 <div className="chat__empty">
                     <div className="chat__empty-icon">
                         <Rocket size={36} color="#ffffff" strokeWidth={1.5} />
@@ -224,14 +201,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                             </div>
                         )}
 
-                        {pendingToolCall && (
-                            <ToolCallPermission
-                                toolName={pendingToolCall.toolName}
-                                args={pendingToolCall.arguments}
-                                onAllow={(always) => onRespondToToolCall(true, always)}
-                                onDeny={() => onRespondToToolCall(false)}
-                            />
-                        )}
 
                         <div ref={messagesEndRef} />
                     </div>

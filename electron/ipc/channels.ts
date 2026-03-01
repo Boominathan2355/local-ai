@@ -9,8 +9,6 @@ export const IPC_CHANNELS = {
     CHAT_STREAM_TOKEN: 'chat:stream-token',
     CHAT_STREAM_COMPLETE: 'chat:stream-complete',
     CHAT_STREAM_ERROR: 'chat:stream-error',
-    CHAT_TOOL_CALL_PERMISSION_REQUESTED: 'chat:tool-call-permission-requested',
-    CHAT_TOOL_CALL_PERMISSION_RESPONSE: 'chat:tool-call-permission-response',
 
     // Conversations
     CONVERSATION_LIST: 'conversation:list',
@@ -50,17 +48,7 @@ export const IPC_CHANNELS = {
     DOWNLOAD_PROGRESS: 'download:progress',
     DOWNLOAD_COMPLETE: 'download:complete',
     DOWNLOAD_ERROR: 'download:error',
-    SETUP_GET_STATUS: 'setup:get-status',
-
-    // MCP
-    MCP_GET_SERVERS: 'mcp:get-servers',
-    MCP_ADD_SERVER: 'mcp:add-server',
-    MCP_DELETE_SERVER: 'mcp:delete-server',
-    MCP_TOGGLE_SERVER: 'mcp:toggle-server',
-    MCP_GET_TOOLS: 'mcp:get-tools',
-    MCP_GET_RESOURCES: 'mcp:get-resources',
-    MCP_GET_SERVER_STATUS: 'mcp:get-server-status',
-    MCP_SERVER_STATUS_CHANGED: 'mcp:server-status-changed'
+    SETUP_GET_STATUS: 'setup:get-status'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

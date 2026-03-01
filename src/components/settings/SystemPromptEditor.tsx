@@ -59,13 +59,18 @@ export const SystemPromptEditor: React.FC<SystemPromptEditorProps> = ({
                     <span className="custom-prompt-title">Prompt Content</span>
                     {activeLabel !== 'Custom' && <span className="custom-prompt-badge">Preset active</span>}
                 </div>
-                <textarea
-                    className="settings-field__textarea"
-                    value={systemPrompt}
-                    onChange={(e) => onUpdate({ systemPrompt: e.target.value })}
-                    placeholder="Define the assistant's personality and behavior..."
-                    id="system-prompt-editor"
-                />
+                <div className="custom-prompt-container">
+                    <div className="custom-prompt-icon">
+                        <Bot size={20} />
+                    </div>
+                    <textarea
+                        className="settings-field__textarea"
+                        value={systemPrompt}
+                        onChange={(e) => onUpdate({ systemPrompt: e.target.value })}
+                        placeholder="Define the assistant's personality and behavior..."
+                        id="system-prompt-editor"
+                    />
+                </div>
                 <div className="settings-field__hint">
                     Defines how the AI assistant responds. Changes apply to new messages.
                 </div>

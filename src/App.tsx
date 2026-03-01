@@ -10,7 +10,6 @@ import { ChatWindow } from './components/chat/ChatWindow'
 import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ModelSetup } from './components/setup/ModelSetup'
 import { ModelLibrary } from './components/library/ModelLibrary'
-import { McpRegistry } from './components/library/McpRegistry'
 import { UserProfile } from './components/user/UserProfile'
 
 import { useConversations } from './hooks/useConversations'
@@ -30,7 +29,6 @@ import './styles/user.css'
 const App: React.FC = () => {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
     const [isLibraryOpen, setIsLibraryOpen] = useState(false)
-    const [isMcpOpen, setIsMcpOpen] = useState(false)
     const [isUserOpen, setIsUserOpen] = useState(false)
     const [needsSetup, setNeedsSetup] = useState<boolean | null>(null)
     const [activeModelId, setActiveModelId] = useState<string | null>(null)
@@ -53,9 +51,7 @@ const App: React.FC = () => {
         sendMessage,
         stopGeneration,
         retryMessage,
-        resendLastMessage,
-        pendingToolCall,
-        respondToToolCall
+        resendLastMessage
     } = useChat(activeConversationId)
 
     const { status: modelStatus, isReady: modelReady } = useModelStatus()
@@ -137,12 +133,12 @@ const App: React.FC = () => {
             if (api) {
                 api.conversations.create().then((conversation) => {
                     selectConversation(conversation.id)
-                    setTimeout(() => sendMessage(content), 50)
+                    setTimeout(() => sendMessage(content, { systemPrompt: settings.systemPrompt }), 50)
                 })
             }
             return
         }
-        sendMessage(content)
+        sendMessage(content, { systemPrompt: settings.systemPrompt })
     }
 
     // Show loading state while checking setup
@@ -168,7 +164,6 @@ const App: React.FC = () => {
                 onDeleteConversation={deleteConversation}
                 onNewChat={createConversation}
                 onOpenSettings={() => setIsSettingsOpen(true)}
-                onOpenMcp={() => setIsMcpOpen(true)}
                 onOpenLibrary={() => setIsLibraryOpen(true)}
                 onOpenUser={() => setIsUserOpen(true)}
                 settings={settings}
@@ -191,8 +186,6 @@ const App: React.FC = () => {
                 onSwitchModel={handleSwitchModel}
                 settings={settings}
                 onUpdateSettings={updateSettings}
-                pendingToolCall={pendingToolCall}
-                onRespondToToolCall={respondToToolCall}
             />
 
             <SettingsPanel
@@ -208,13 +201,6 @@ const App: React.FC = () => {
                 onClose={() => setIsLibraryOpen(false)}
                 activeModelId={activeModelId}
                 onModelSwitch={handleSwitchModel}
-                settings={settings}
-                onUpdateSettings={updateSettings}
-            />
-
-            <McpRegistry
-                isOpen={isMcpOpen}
-                onClose={() => setIsMcpOpen(false)}
                 settings={settings}
                 onUpdateSettings={updateSettings}
             />

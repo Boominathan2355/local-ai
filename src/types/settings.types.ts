@@ -1,22 +1,3 @@
-/** Supported cloud API providers */
-export type ApiProvider = 'openai' | 'anthropic' | 'google'
-
-export interface ApiKeyConfig {
-    openai: string
-    anthropic: string
-    google: string
-}
-
-export interface McpServer {
-    id: string
-    name: string
-    type: 'sse' | 'stdio'
-    urlOrPath: string
-    env?: Record<string, string>
-    enabled: boolean
-    status: 'connected' | 'error' | 'disconnected'
-}
-
 export interface AppSettings {
     systemPrompt: string
     threads: number
@@ -26,23 +7,15 @@ export interface AppSettings {
     maxTokens: number
     theme: 'dark' | 'light'
     userName: string
-    /** API keys for cloud providers */
-    apiKeys: ApiKeyConfig
-    /** List of cloud model IDs that have been explicitly activated by the user */
-    activatedCloudModels: string[]
-    /** Registered MCP servers */
-    mcpServers: McpServer[]
-    /** Tools that are always allowed to run without parity per-call permission */
-    allowedTools: string[]
+    serperApiKey?: string
+    tavilyApiKey?: string
+    openaiApiKey?: string
+    anthropicApiKey?: string
+    geminiApiKey?: string
+    enabledCloudModels: string[]
 }
 
 export const DEFAULT_SYSTEM_PROMPT = `You are a helpful, knowledgeable AI assistant running locally on the user's machine. You provide clear, accurate, and thoughtful responses. You are private, offline, and secure.`
-
-export const DEFAULT_API_KEYS: ApiKeyConfig = {
-    openai: '',
-    anthropic: '',
-    google: ''
-}
 
 export const DEFAULT_SETTINGS: AppSettings = {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
@@ -53,25 +26,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     maxTokens: 1024,
     theme: 'dark',
     userName: 'Local AI User',
-    apiKeys: DEFAULT_API_KEYS,
-    activatedCloudModels: [],
-    mcpServers: [
-        {
-            id: 'builtin-filesystem',
-            name: 'Filesystem (Built-in)',
-            type: 'stdio',
-            urlOrPath: '',
-            enabled: false,
-            status: 'connected'
-        },
-        {
-            id: 'builtin-terminal',
-            name: 'Terminal (Built-in)',
-            type: 'stdio',
-            urlOrPath: '',
-            enabled: false,
-            status: 'connected'
-        }
-    ],
-    allowedTools: []
+    serperApiKey: '',
+    tavilyApiKey: '',
+    openaiApiKey: '',
+    anthropicApiKey: '',
+    geminiApiKey: '',
+    enabledCloudModels: ['gpt-4o', 'claude-3-5-sonnet', 'gemini-1.5-pro']
 }
