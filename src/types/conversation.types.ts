@@ -4,6 +4,7 @@ export interface Conversation {
     createdAt: number
     updatedAt: number
     messageCount: number
+    isGenerating?: boolean
 }
 
-export type ConversationListItem = Pick<Conversation, 'id' | 'title' | 'updatedAt' | 'messageCount'>
+export type ConversationListItem = Pick<Conversation, 'id' | 'title' | 'updatedAt' | 'messageCount' | 'isGenerating'>

@@ -10,6 +10,7 @@ interface ConversationSidebarProps {
     activeConversationId: string | null
     onSelectConversation: (id: string) => void
     onDeleteConversation: (id: string) => void
+    onAbortConversation: () => void
     onNewChat: () => void
     onOpenSettings: () => void
     onOpenLibrary: () => void
@@ -22,6 +23,7 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     activeConversationId,
     onSelectConversation,
     onDeleteConversation,
+    onAbortConversation,
     onNewChat,
     onOpenSettings,
     onOpenLibrary,
@@ -68,6 +70,7 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                             isActive={conversation.id === activeConversationId}
                             onSelect={onSelectConversation}
                             onDelete={onDeleteConversation}
+                            onAbort={onAbortConversation}
                         />
                     ))
                 )}

@@ -9,6 +9,7 @@ export const IPC_CHANNELS = {
     CHAT_STREAM_TOKEN: 'chat:stream-token',
     CHAT_STREAM_COMPLETE: 'chat:stream-complete',
     CHAT_STREAM_ERROR: 'chat:stream-error',
+    CHAT_SWITCH_VERSION: 'chat:switch-version',
 
     // Conversations
     CONVERSATION_LIST: 'conversation:list',

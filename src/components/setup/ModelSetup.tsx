@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import {
-    Sparkles,
     Rocket,
     Download,
     Check,
+    Star,
+    Sparkles,
     Cpu,
     Shield,
     ArrowRight,
@@ -11,12 +12,15 @@ import {
 } from 'lucide-react'
 
 import { getLocalAI } from '../../helpers/ipc.helper'
+import { getBestFitModelId, getRecommendation } from '../../helpers/recommendation.helper'
+import type { SystemInfo } from '../../helpers/recommendation.helper'
 
 interface DownloadableModel {
     id: string
     name: string
     description: string
     sizeGB: number
+    ramRequired: number
     filename: string
     downloaded: boolean
 }
@@ -64,6 +68,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
     const [currentStep, setCurrentStep] = useState<SetupStep>('binary')
     const [progress, setProgress] = useState<DownloadProgress | null>(null)
     const [isDownloading, setIsDownloading] = useState(false)
+    const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
     const [error, setError] = useState<string | null>(null)
 
     const cleanupRef = useRef<Array<() => void>>([])
@@ -83,14 +88,22 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
         })
 
         api.download.getModels({ includeCloud: false }).then((m) => {
-            setModels(m)
-            // Pre-select the first downloaded or recommended model
-            const downloaded = m.find((model) => model.downloaded)
-            if (downloaded) {
-                setSelectedModelId(downloaded.id)
-            } else {
-                setSelectedModelId(m[0]?.id ?? null)
-            }
+            setModels(m as DownloadableModel[])
+            // Pre-select the best fit model for the hardware
+            api.system.getInfo().then(sys => {
+                setSystemInfo(sys)
+                const rec = getRecommendation(m as any[], sys)
+                if (rec) {
+                    setSelectedModelId(rec.id)
+                } else {
+                    const downloaded = m.find((model) => model.downloaded)
+                    if (downloaded) {
+                        setSelectedModelId(downloaded.id)
+                    } else {
+                        setSelectedModelId(m[0]?.id ?? null)
+                    }
+                }
+            })
         })
     }, [onComplete])
 
@@ -248,8 +261,18 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                         <span>{model.sizeGB} GB</span>
                                         {model.downloaded ? (
                                             <span className="model-card__badge model-card__badge--downloaded">Downloaded</span>
-                                        ) : index === 0 ? (
-                                            <span className="model-card__badge model-card__badge--recommended">Recommended</span>
+                                        ) : selectedModelId === model.id ? (
+                                            <span className="model-card__badge model-card__badge--recommended" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                {systemInfo ? (
+                                                    <>
+                                                        {getRecommendation(models, systemInfo)?.reason.includes('VRAM') || getRecommendation(models, systemInfo)?.reason.includes('GPU') ? <Rocket size={12} /> :
+                                                            getRecommendation(models, systemInfo)?.reason.includes('CPU') ? <Cpu size={12} /> :
+                                                                getRecommendation(models, systemInfo)?.reason.includes('Lightweight') ? <Sparkles size={12} /> :
+                                                                    <Star size={12} />}
+                                                        {getRecommendation(models, systemInfo)?.reason}
+                                                    </>
+                                                ) : 'Recommended'}
+                                            </span>
                                         ) : null}
                                     </div>
                                 </button>

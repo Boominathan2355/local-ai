@@ -34,7 +34,7 @@ interface ChatWindowProps {
     isStreaming: boolean
     error: string | null
     modelReady: boolean
-    onSendMessage: (content: string) => void
+    onSendMessage: (content: string, images?: string[], searchEnabled?: boolean, retryId?: string) => void
     onStopGeneration: () => void
     activeModelId: string | null
     modelStatus: string
@@ -45,6 +45,8 @@ interface ChatWindowProps {
     onResendLast: () => void
     activeModelName?: string | null
     activeModelTier?: string | null
+    allMessages?: ChatMessage[]
+    onSwitchVersion?: (id: string) => void
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -63,7 +65,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     onRetryMessage,
     onResendLast,
     activeModelName,
-    activeModelTier
+    activeModelTier,
+    allMessages,
+    onSwitchVersion
 }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -80,9 +84,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     }
 
     const handleEdit = (id: string, newContent: string) => {
-        // For now, retry with new content is just sending again
-        // In a fuller implementation, we might want to update the message history
-        onSendMessage(newContent)
+        onSendMessage(newContent, [], false, id)
     }
 
     const hasMessages = messages.length > 0 || isStreaming
@@ -150,6 +152,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                             <MessageBubble
                                 key={message.id}
                                 message={message}
+                                allMessages={allMessages}
+                                onSwitchVersion={onSwitchVersion}
                                 onRetry={onRetryMessage}
                                 onEdit={handleEdit}
                                 isLast={index === messages.length - 1}
@@ -188,16 +192,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                         )}
 
                         {/* Error display */}
-                        {error && (
+                        {error && error !== 'aborted' && (
                             <div className="chat__error-container" id="error-message">
                                 <div className="chat__error-message">
                                     <AlertCircle size={20} />
                                     <span>{error}</span>
                                 </div>
-                                <button className="chat__retry-btn" onClick={onResendLast}>
-                                    <RotateCcw size={16} />
-                                    Try Again
-                                </button>
+                                <div className="chat__error-actions">
+                                    <button className="chat__retry-btn" onClick={onResendLast}>
+                                        <RotateCcw size={16} />
+                                        Try Again
+                                    </button>
+                                </div>
                             </div>
                         )}
 

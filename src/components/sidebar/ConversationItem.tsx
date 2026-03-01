@@ -9,13 +9,15 @@ interface ConversationItemProps {
     isActive: boolean
     onSelect: (id: string) => void
     onDelete: (id: string) => void
+    onAbort: () => void
 }
 
 export const ConversationItem: React.FC<ConversationItemProps> = ({
     conversation,
     isActive,
     onSelect,
-    onDelete
+    onDelete,
+    onAbort
 }) => {
     const handleDelete = (e: React.MouseEvent): void => {
         e.stopPropagation()
@@ -31,20 +33,38 @@ export const ConversationItem: React.FC<ConversationItemProps> = ({
             id={`conversation-${conversation.id}`}
         >
             <div className="conversation-item__content">
-                <div className="conversation-item__title">{conversation.title}</div>
+                <div className="conversation-item__title">
+                    {conversation.isGenerating && (
+                        <div className="conversation-item__loader">
+                            <div className="loader-dot"></div>
+                            <div className="loader-dot"></div>
+                            <div className="loader-dot"></div>
+                        </div>
+                    )}
+                    <span>{conversation.title}</span>
+                </div>
                 <div className="conversation-item__meta">
                     {formatRelativeTime(conversation.updatedAt)}
                     {conversation.messageCount > 0 && ` · ${conversation.messageCount} msgs`}
                 </div>
             </div>
-            <button
-                className="conversation-item__delete"
-                onClick={handleDelete}
-                title="Delete conversation"
-                id={`delete-conversation-${conversation.id}`}
-            >
-                <Trash2 size={14} />
-            </button>
+            {conversation.isGenerating ? (
+                <button
+                    className="conversation-item__abort"
+                    onClick={(e) => { e.stopPropagation(); onAbort(); }}
+                    title="Abort generation"
+                >
+                    <div className="abort-icon">×</div>
+                </button>
+            ) : (
+                <button
+                    className="conversation-item__delete"
+                    onClick={handleDelete}
+                    title="Delete conversation"
+                >
+                    <Trash2 size={14} />
+                </button>
+            )}
         </div>
     )
 }

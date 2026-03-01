@@ -13,11 +13,15 @@ import {
 import { MarkdownRenderer } from './MarkdownRenderer'
 import type { ChatMessage } from '../../types/chat.types'
 
+import { VersionPager } from './VersionPager'
+
 interface MessageBubbleProps {
     message: ChatMessage
     onRetry?: (id: string) => void
     onEdit?: (id: string, content: string) => void
     isLast?: boolean
+    allMessages?: ChatMessage[]
+    onSwitchVersion?: (messageId: string) => void
 }
 
 interface DataCardProps {
@@ -37,12 +41,36 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     message,
     onRetry,
     onEdit,
-    isLast
+    isLast,
+    allMessages = [],
+    onSwitchVersion
 }) => {
     const isUser = message.role === 'user'
     const [copied, setCopied] = useState(false)
     const [isEditing, setIsEditing] = useState(false)
     const [editContent, setEditContent] = useState(message.content)
+
+    // Find versions (siblings)
+    const siblings = message.replyToId
+        ? allMessages
+            .filter(m => m.replyToId === message.replyToId)
+            .sort((a, b) => (a.version || 0) - (b.version || 0))
+        : []
+
+    const currentVersionIdx = siblings.findIndex(s => s.id === message.id)
+    const totalVersions = siblings.length
+
+    const handleNextVersion = () => {
+        if (currentVersionIdx < totalVersions - 1 && onSwitchVersion) {
+            onSwitchVersion(siblings[currentVersionIdx + 1].id)
+        }
+    }
+
+    const handlePrevVersion = () => {
+        if (currentVersionIdx > 0 && onSwitchVersion) {
+            onSwitchVersion(siblings[currentVersionIdx - 1].id)
+        }
+    }
 
     const handleCopy = (): void => {
         navigator.clipboard.writeText(message.content)
@@ -138,6 +166,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                             <MarkdownRenderer content={message.content} />
                         </div>
                     )}
+
+                    {!isUser && totalVersions > 1 && (
+                        <VersionPager
+                            current={currentVersionIdx + 1}
+                            total={totalVersions}
+                            onPrev={handlePrevVersion}
+                            onNext={handleNextVersion}
+                        />
+                    )}
                 </div>
                 {isUser && (
                     <div className="message__avatar message__avatar--user">
@@ -164,9 +201,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 )}
 
                 {!isUser && (
-                    <button className="message__action-btn" onClick={handleShare} title="Share">
-                        <Share2 size={14} />
-                    </button>
+                    <>
+                        <button className="message__action-btn" onClick={() => onRetry?.(message.id)} title="Try Again">
+                            <RotateCcw size={14} />
+                        </button>
+                        <button className="message__action-btn" onClick={handleShare} title="Share">
+                            <Share2 size={14} />
+                        </button>
+                    </>
                 )}
             </div>
         </div>

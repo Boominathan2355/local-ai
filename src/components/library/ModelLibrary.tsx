@@ -1,29 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Feather, Lightbulb, Zap, Database, Wrench, Bot, Library as LibraryIcon, CheckCircle2, AlertTriangle, XCircle, X, Download } from 'lucide-react'
+import { Star, Sparkles, Cpu, Feather, Lightbulb, Zap, Database, Wrench, Bot, Library as LibraryIcon, CheckCircle2, AlertTriangle, XCircle, X, Download } from 'lucide-react'
 import { getLocalAI } from '../../helpers/ipc.helper'
+import { getCompatibility, getBestFitModelId, getRecommendation } from '../../helpers/recommendation.helper'
+import type { SystemInfo, CompatibilityStatus, ModelInfo } from '../../helpers/recommendation.helper'
 
 import type { AppSettings } from '../../types/settings.types'
 
-interface ModelInfo {
-    id: string
-    name: string
-    description: string
-    sizeGB: number
-    ramRequired: number
-    tier: string
-    filename: string
-    downloaded: boolean
-    supportsImages?: boolean
-    provider?: 'local' | 'openai' | 'anthropic' | 'google'
-}
-
-interface SystemInfo {
-    totalRamMB: number
-    freeRamMB: number
-    cpuCores: number
-    diskFreeGB: number
-    diskTotalGB: number
-}
+// Interface definitions moved to recommendation.helper.ts and imported
 
 interface DownloadProgress {
     id: string
@@ -58,12 +41,7 @@ const CATEGORY_ICONS: Record<ModelCategory, React.ReactNode> = {
     'agent': <Bot size={16} />
 }
 
-function getCompatibility(ramRequired: number, totalRamMB: number): { label: string; icon: React.ReactNode; className: string } {
-    const totalRamGB = totalRamMB / 1024
-    if (totalRamGB >= ramRequired * 1.3) return { label: 'Will run great', icon: <CheckCircle2 size={12} />, className: 'compat--good' }
-    if (totalRamGB >= ramRequired) return { label: 'Tight fit', icon: <AlertTriangle size={12} />, className: 'compat--warn' }
-    return { label: 'Needs more RAM', icon: <XCircle size={12} />, className: 'compat--bad' }
-}
+// Logic moved to recommendation.helper.ts
 
 function formatBytes(bytes: number): string {
     if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
@@ -97,6 +75,16 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
     useEffect(() => {
         if (!isOpen) return
         loadData()
+
+        // Poll system info while library is open
+        const interval = setInterval(() => {
+            const api = getLocalAI()
+            if (api) {
+                api.system.getInfo().then(setSystemInfo)
+            }
+        }, 5000)
+
+        return () => clearInterval(interval)
     }, [isOpen, loadData])
 
     // Download event listeners
@@ -182,9 +170,11 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
     const renderModelCard = (model: ModelInfo) => {
         const progress = activeDownloads[`model:${model.id}`]
         const error = errors[`model:${model.id}`] ?? errors[model.id]
-        const compat = systemInfo
-            ? getCompatibility(model.ramRequired, systemInfo.totalRamMB)
+        const compat = model.ramRequired > 0
+            ? getCompatibility(model.ramRequired, systemInfo)
             : null
+        const rec = systemInfo ? getRecommendation(models, systemInfo) : null
+        const isRecommended = rec?.id === model.id
         const isActive = model.id === activeModelId
 
         return (
@@ -206,6 +196,15 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                                 <Zap size={10} /> {model.provider.toUpperCase()} MODEL
                             </span>
                         )}
+                        {isRecommended && !model.downloaded && (
+                            <span className="library__card-badge library__card-badge--recommended" style={{ background: 'var(--accent-primary)', color: 'white', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                {rec?.reason.includes('VRAM') || rec?.reason.includes('GPU') ? <Zap size={10} /> :
+                                    rec?.reason.includes('CPU') ? <Cpu size={10} /> :
+                                        rec?.reason.includes('Lightweight') ? <Sparkles size={10} /> :
+                                            <Star size={10} />}
+                                {rec?.reason.toUpperCase()}
+                            </span>
+                        )}
                     </div>
                     {isActive && <span className="library__card-active">Active</span>}
                 </div>
@@ -223,7 +222,8 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                             <span>Needs {model.ramRequired} GB RAM</span>
                             {compat && (
                                 <span className={`library__compat ${compat.className}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    {compat.icon} {compat.label}
+                                    {compat.level === 'good' ? <CheckCircle2 size={12} /> : compat.level === 'warn' ? <AlertTriangle size={12} /> : <XCircle size={12} />}
+                                    {compat.label}
                                 </span>
                             )}
                         </>
@@ -355,13 +355,11 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
 
                 {systemInfo && (
                     <div className="library__capacity">
+                        {/* Group 1: RAM */}
                         <div className="capacity__group">
                             <div className="capacity__stats">
                                 <span className="capacity__item">
-                                    <strong>RAM:</strong> {totalRamGB} GB total · {freeRamGB} GB free
-                                </span>
-                                <span className="capacity__item">
-                                    <strong>CPU:</strong> {systemInfo.cpuCores} cores
+                                    <strong>RAM:</strong> {freeRamGB} / {totalRamGB} GB free
                                 </span>
                             </div>
                             <div className="capacity__bar">
@@ -373,10 +371,27 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                             <div className="capacity__bar-label">RAM Usage</div>
                         </div>
 
+                        {/* Group 2: CPU */}
                         <div className="capacity__group">
                             <div className="capacity__stats">
                                 <span className="capacity__item">
-                                    <strong>Disk:</strong> {(systemInfo.diskTotalGB || 0).toFixed(0)} GB total · {(systemInfo.diskFreeGB || 0).toFixed(0)} GB free
+                                    <strong>CPU:</strong> {systemInfo.cpuCores} cores · {systemInfo.cpuUsagePercent ?? 0}% usage
+                                </span>
+                            </div>
+                            <div className="capacity__bar">
+                                <div
+                                    className="capacity__bar-fill capacity__bar-fill--cpu"
+                                    style={{ width: `${systemInfo.cpuUsagePercent ?? 0}%` }}
+                                />
+                            </div>
+                            <div className="capacity__bar-label">CPU Usage</div>
+                        </div>
+
+                        {/* Group 3: Disk */}
+                        <div className="capacity__group">
+                            <div className="capacity__stats">
+                                <span className="capacity__item">
+                                    <strong>Disk:</strong> {(systemInfo.diskFreeGB || 0).toFixed(0)} / {(systemInfo.diskTotalGB || 0).toFixed(0)} GB free
                                 </span>
                             </div>
                             <div className="capacity__bar">
@@ -387,6 +402,24 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                             </div>
                             <div className="capacity__bar-label">Disk Usage</div>
                         </div>
+
+                        {/* Group 4: GPU */}
+                        {systemInfo.gpuName && (
+                            <div className="capacity__group">
+                                <div className="capacity__stats">
+                                    <span className="capacity__item">
+                                        <strong>GPU:</strong> {systemInfo.gpuName}
+                                    </span>
+                                </div>
+                                <div className="capacity__bar">
+                                    <div
+                                        className="capacity__bar-fill capacity__bar-fill--gpu"
+                                        style={{ width: `${Math.min(100, ((systemInfo.gpuMemoryTotalMB! - (systemInfo.gpuMemoryFreeMB || 0)) / systemInfo.gpuMemoryTotalMB!) * 100)}%` }}
+                                    />
+                                </div>
+                                <div className="capacity__bar-label">GPU VRAM: {((systemInfo.gpuMemoryTotalMB! - (systemInfo.gpuMemoryFreeMB || 0)) / 1024).toFixed(1)} / {(systemInfo.gpuMemoryTotalMB! / 1024).toFixed(1)} GB</div>
+                            </div>
+                        )}
                     </div>
                 )}
 

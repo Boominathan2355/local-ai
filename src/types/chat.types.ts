@@ -9,6 +9,13 @@ export interface ChatMessage {
     createdAt: number
     /** Base64 data URLs for attached images (multimodal only) */
     images?: string[]
+    isAborted?: boolean
+    modelId?: string
+    modelName?: string
+    replyToId?: string
+    siblingIds?: string[]
+    version?: number
+    isActive?: boolean
 }
 
 export interface StreamingState {

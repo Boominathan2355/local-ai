@@ -9,11 +9,12 @@ import type { ModelStatus } from '../../src/types/model.types'
 
 export interface LocalAIApi {
     chat: {
-        sendMessage: (conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean) => Promise<{ success?: boolean; error?: string }>
+        sendMessage: (conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean, retryId?: string) => Promise<{ success?: boolean; error?: string }>
         stopGeneration: () => Promise<{ success: boolean }>
         onStreamToken: (callback: (event: StreamTokenEvent) => void) => () => void
         onStreamComplete: (callback: (data: { conversationId: string }) => void) => () => void
         onStreamError: (callback: (data: { conversationId: string; error: string }) => void) => () => void
+        switchVersion: (conversationId: string, messageId: string) => Promise<{ success: boolean }>
     }
     conversations: {
         list: () => Promise<Conversation[]>
@@ -40,7 +41,17 @@ export interface LocalAIApi {
         importData: (jsonString: string) => Promise<{ success: boolean }>
     }
     system: {
-        getInfo: () => Promise<{ totalRamMB: number; freeRamMB: number; cpuCores: number; diskFreeGB: number; diskTotalGB: number }>
+        getInfo: () => Promise<{
+            totalRamMB: number
+            freeRamMB: number
+            cpuCores: number
+            cpuUsagePercent: number
+            diskFreeGB: number
+            diskTotalGB: number
+            gpuName?: string
+            gpuMemoryTotalMB?: number
+            gpuMemoryFreeMB?: number
+        }>
     }
     download: {
         getModels: (options?: { includeCloud?: boolean }) => Promise<Array<{ id: string; name: string; description: string; sizeGB: number; ramRequired: number; tier: string; filename: string; downloaded: boolean }>>
@@ -71,8 +82,8 @@ function createListener<T>(channel: string, callback: (data: T) => void): () => 
 
 const api: LocalAIApi = {
     chat: {
-        sendMessage: (conversationId, content, systemPrompt, images, searchEnabled) =>
-            ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND_MESSAGE, conversationId, content, systemPrompt, images, searchEnabled),
+        sendMessage: (conversationId, content, systemPrompt, images, searchEnabled, retryId) =>
+            ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND_MESSAGE, conversationId, content, systemPrompt, images, searchEnabled, retryId),
         stopGeneration: () =>
             ipcRenderer.invoke(IPC_CHANNELS.CHAT_STOP_GENERATION),
         onStreamToken: (callback) =>
@@ -80,7 +91,9 @@ const api: LocalAIApi = {
         onStreamComplete: (callback) =>
             createListener(IPC_CHANNELS.CHAT_STREAM_COMPLETE, callback),
         onStreamError: (callback) =>
-            createListener(IPC_CHANNELS.CHAT_STREAM_ERROR, callback)
+            createListener(IPC_CHANNELS.CHAT_STREAM_ERROR, callback),
+        switchVersion: (conversationId, messageId) =>
+            ipcRenderer.invoke(IPC_CHANNELS.CHAT_SWITCH_VERSION, conversationId, messageId)
     },
     conversations: {
         list: () => ipcRenderer.invoke(IPC_CHANNELS.CONVERSATION_LIST),

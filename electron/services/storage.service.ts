@@ -26,8 +26,12 @@ export interface SystemInfo {
     totalRamMB: number
     freeRamMB: number
     cpuCores: number
+    cpuUsagePercent: number
     diskFreeGB: number
     diskTotalGB: number
+    gpuName?: string
+    gpuMemoryTotalMB?: number
+    gpuMemoryFreeMB?: number
 }
 
 const STORAGE_FILE = 'local-ai-data.json'
@@ -42,6 +46,7 @@ export class StorageService extends EventEmitter {
     private data: StorageData
     private readonly filePath: string
     private isGenerating = false
+    private activeGeneratingId: string | null = null
 
     constructor() {
         super()
@@ -64,7 +69,7 @@ export class StorageService extends EventEmitter {
             totalIdle += cpu.times.idle
             totalTick += cpu.times.user + cpu.times.nice + cpu.times.sys + cpu.times.irq + cpu.times.idle
         }
-        const cpuUsagePercent = Math.round(((totalTick - totalIdle) / totalTick) * 100)
+        const cpuUsagePercent = totalTick > 0 ? Math.round(((totalTick - totalIdle) / totalTick) * 100) : 0
         return { cpuUsagePercent, freeMemoryMB, totalMemoryMB }
     }
 
@@ -72,6 +77,9 @@ export class StorageService extends EventEmitter {
         const totalRamMB = Math.round(os.totalmem() / (1024 * 1024))
         const freeRamMB = Math.round(os.freemem() / (1024 * 1024))
         const cpuCores = os.cpus().length
+        const metrics = this.getMetrics()
+        const cpuUsagePercent = metrics.cpuUsagePercent
+
         let diskFreeGB = 0
         let diskTotalGB = 0
         try {
@@ -81,7 +89,33 @@ export class StorageService extends EventEmitter {
             diskTotalGB = total
             diskFreeGB = free
         } catch { /* skip */ }
-        return { totalRamMB, freeRamMB, cpuCores, diskFreeGB, diskTotalGB }
+
+        let gpuName: string | undefined
+        let gpuMemoryTotalMB: number | undefined
+        let gpuMemoryFreeMB: number | undefined
+
+        try {
+            // Basic NVIDIA detection on Linux
+            const nvidiaOutput = execSync('nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits', { encoding: 'utf-8', timeout: 3000 }).trim()
+            if (nvidiaOutput) {
+                const [name, total, free] = nvidiaOutput.split(',').map(s => s.trim())
+                gpuName = name
+                gpuMemoryTotalMB = parseInt(total)
+                gpuMemoryFreeMB = parseInt(free)
+            }
+        } catch { /* skip if no nvidia-smi */ }
+
+        return {
+            totalRamMB,
+            freeRamMB,
+            cpuCores,
+            cpuUsagePercent,
+            diskFreeGB,
+            diskTotalGB,
+            gpuName,
+            gpuMemoryTotalMB,
+            gpuMemoryFreeMB
+        }
     }
 
     canGenerate(): { allowed: boolean; reason?: string } {
@@ -92,7 +126,19 @@ export class StorageService extends EventEmitter {
         return { allowed: true }
     }
 
-    setGenerating(v: boolean) { this.isGenerating = v }
+    setGenerating(v: boolean, conversationId?: string) {
+        this.isGenerating = v
+        if (v && conversationId) {
+            this.activeGeneratingId = conversationId
+        } else if (!v) {
+            this.activeGeneratingId = null
+        }
+
+        // Update the conversation object in memory
+        this.data.conversations.forEach(c => {
+            c.isGenerating = (v && c.id === conversationId)
+        })
+    }
 
     // --- Conversations ---
 
@@ -136,6 +182,12 @@ export class StorageService extends EventEmitter {
         if (!this.data.messages[message.conversationId]) {
             this.data.messages[message.conversationId] = []
         }
+
+        // Default to active for new messages
+        if (message.isActive === undefined) {
+            message.isActive = true
+        }
+
         this.data.messages[message.conversationId].push(message)
 
         const conversation = this.data.conversations.find((c) => c.id === message.conversationId)
@@ -147,13 +199,59 @@ export class StorageService extends EventEmitter {
         this.save()
     }
 
+    updateMessage(conversationId: string, messageId: string, content: string): void {
+        const messages = this.data.messages[conversationId]
+        if (!messages) return
+        const msg = messages.find(m => m.id === messageId)
+        if (msg) {
+            msg.content = content
+            msg.createdAt = Date.now()
+            this.save()
+        }
+    }
+
+    pruneMessagesAfter(conversationId: string, messageId: string): void {
+        const messages = this.data.messages[conversationId]
+        if (!messages) return
+        const index = messages.findIndex(m => m.id === messageId)
+        if (index !== -1) {
+            this.data.messages[conversationId] = messages.slice(0, index + 1)
+            const conversation = this.data.conversations.find((c) => c.id === conversationId)
+            if (conversation) {
+                conversation.updatedAt = Date.now()
+                conversation.messageCount = this.data.messages[conversationId].length
+            }
+            this.save()
+        }
+    }
+
+    switchActiveVersion(conversationId: string, messageId: string): void {
+        const messages = this.data.messages[conversationId]
+        if (!messages) return
+
+        const targetMsg = messages.find(m => m.id === messageId)
+        if (!targetMsg || !targetMsg.replyToId) return
+
+        // Set target as active, siblings as inactive
+        messages.forEach(m => {
+            if (m.replyToId === targetMsg.replyToId) {
+                m.isActive = (m.id === messageId)
+            }
+        })
+
+        this.save()
+    }
+
     getRollingContext(conversationId: string, maxTokens: number): ChatMessage[] {
-        const messages = this.getMessages(conversationId)
+        const allMessages = this.getMessages(conversationId)
+        // Filter out inactive assistant versions
+        const filteredMessages = allMessages.filter(m => m.role !== 'assistant' || m.isActive !== false)
+
         const result: ChatMessage[] = []
         let tokenCount = 0
 
-        for (let i = messages.length - 1; i >= 0; i--) {
-            const msg = messages[i]
+        for (let i = filteredMessages.length - 1; i >= 0; i--) {
+            const msg = filteredMessages[i]
             if (tokenCount + msg.tokenCount > maxTokens) break
             result.unshift(msg)
             tokenCount += msg.tokenCount

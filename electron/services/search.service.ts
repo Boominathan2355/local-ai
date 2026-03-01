@@ -10,24 +10,27 @@ export interface SearchResult {
  * Service to handle web searching via Serper.dev API
  */
 export class SearchService {
-    async search(query: string, settings: { serperApiKey?: string, tavilyApiKey?: string }): Promise<SearchResult[]> {
+    async search(query: string, settings: { serperApiKey?: string, tavilyApiKey?: string }, signal?: AbortSignal): Promise<SearchResult[]> {
         if (settings.tavilyApiKey) {
             try {
-                return await this.searchTavily(query, settings.tavilyApiKey)
+                return await this.searchTavily(query, settings.tavilyApiKey, signal)
             } catch (err) {
+                if (err instanceof Error && err.message === 'aborted') throw err
                 console.error('[SearchService] Tavily search failed, falling back to Serper:', err)
             }
         }
 
         if (settings.serperApiKey) {
-            return await this.searchSerper(query, settings.serperApiKey)
+            return await this.searchSerper(query, settings.serperApiKey, signal)
         }
 
         throw new Error('No search API key configured (Tavily or Serper)')
     }
 
-    private async searchSerper(query: string, apiKey: string): Promise<SearchResult[]> {
+    private async searchSerper(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult[]> {
         return new Promise((resolve, reject) => {
+            if (signal?.aborted) return reject(new Error('aborted'))
+
             const data = JSON.stringify({ q: query })
             const options = {
                 hostname: 'google.serper.dev',
@@ -58,14 +61,21 @@ export class SearchService {
                 })
             })
 
+            signal?.addEventListener('abort', () => {
+                req.destroy()
+                reject(new Error('aborted'))
+            })
+
             req.on('error', (err) => reject(err))
             req.write(data)
             req.end()
         })
     }
 
-    private async searchTavily(query: string, apiKey: string): Promise<SearchResult[]> {
+    private async searchTavily(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult[]> {
         return new Promise((resolve, reject) => {
+            if (signal?.aborted) return reject(new Error('aborted'))
+
             const data = JSON.stringify({
                 query,
                 search_depth: 'basic',
@@ -99,6 +109,11 @@ export class SearchService {
                         reject(new Error('Failed to parse Tavily results'))
                     }
                 })
+            })
+
+            signal?.addEventListener('abort', () => {
+                req.destroy()
+                reject(new Error('aborted'))
             })
 
             req.on('error', (err) => reject(err))

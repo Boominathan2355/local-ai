@@ -6,14 +6,16 @@ import { DEFAULT_SYSTEM_PROMPT } from '../types/settings.types'
 
 interface UseChatReturn {
     messages: ChatMessage[]
+    allMessages: ChatMessage[]
     streamingContent: string
     isStreaming: boolean
     error: string | null
-    sendMessage: (content: string, options?: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean }) => void
+    sendMessage: (content: string, options?: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean }, retryId?: string) => void
     stopGeneration: () => void
     clearError: () => void
     retryMessage: (messageId: string) => void
     resendLastMessage: () => void
+    switchVersion: (messageId: string) => Promise<void>
 }
 
 /**
@@ -30,6 +32,12 @@ export function useChat(conversationId: string | null): UseChatReturn {
 
     // Load messages when conversation changes
     useEffect(() => {
+        // Reset streaming state when switching conversations
+        setIsStreaming(false)
+        setStreamingContent('')
+        streamingRef.current = false
+        setError(null)
+
         if (!conversationId) {
             setMessages([])
             return
@@ -86,9 +94,10 @@ export function useChat(conversationId: string | null): UseChatReturn {
                     setMessages((prev) => {
                         if (prev.some(m => m.id === data.message!.id)) return prev
                         const optimisticIndex = prev.findIndex(m =>
-                            m.id.startsWith('temp-') &&
-                            m.role === data.message!.role &&
-                            m.content === data.message!.content
+                            (m.id === data.message!.id) ||
+                            (m.id.startsWith('temp-') &&
+                                m.role === data.message!.role &&
+                                m.content.trim() === data.message!.content.trim())
                         )
                         if (optimisticIndex !== -1) {
                             const newMessages = [...prev]
@@ -114,8 +123,8 @@ export function useChat(conversationId: string | null): UseChatReturn {
     }, [conversationId])
 
     const sendMessage = useCallback(
-        (content: string, options?: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean }) => {
-            if (!conversationId || streamingRef.current || (!content.trim() && !options?.images?.length)) return
+        (content: string, options: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean } = {}, retryId?: string) => {
+            if (!conversationId || (streamingRef.current && !retryId) || (!content.trim() && !options?.images?.length)) return
 
             const api = getLocalAI()
             if (!api) return
@@ -125,7 +134,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
             setIsStreaming(true)
             setStreamingContent('')
 
-            const optimisticId = `temp-${Date.now()}`
+            const optimisticId = retryId || `temp-${Date.now()}`
             const optimisticMessage: ChatMessage = {
                 id: optimisticId,
                 conversationId,
@@ -135,27 +144,52 @@ export function useChat(conversationId: string | null): UseChatReturn {
                 createdAt: Date.now(),
                 images: options?.images
             }
-            setMessages((prev) => [...prev, optimisticMessage])
 
-            if (!api) return
+            setMessages((prev) => {
+                if (retryId) {
+                    const index = prev.findIndex(m => m.id === retryId)
+                    if (index !== -1) {
+                        const newMessages = [...prev]
+                        newMessages[index] = optimisticMessage
+                        return newMessages
+                    }
+                }
+                return [...prev, optimisticMessage]
+            })
 
-            // @ts-ignore - Updating signature in next steps
-            api.chat.sendMessage(conversationId, content.trim(), options?.systemPrompt || DEFAULT_SYSTEM_PROMPT, options?.images, options?.searchEnabled).then((result) => {
-                if (result.error) {
-                    setError(result.error)
+            api.chat.sendMessage(conversationId, content.trim(), options?.systemPrompt || DEFAULT_SYSTEM_PROMPT, options?.images, options?.searchEnabled, retryId)
+                .then((result) => {
+                    if (result.error) {
+                        setError(result.error)
+                        streamingRef.current = false
+                        setIsStreaming(false)
+                    }
+                })
+                .catch((err) => {
+                    setError(err.message || 'Network error')
                     streamingRef.current = false
                     setIsStreaming(false)
-                }
-            })
+                })
         },
         [conversationId]
     )
 
     const retryMessage = useCallback(
         (messageId: string) => {
-            const message = messages.find((m) => m.id === messageId)
-            if (!message || message.role !== 'user') return
-            sendMessage(message.content, { images: message.images })
+            const index = messages.findIndex((m) => m.id === messageId)
+            if (index === -1) return
+
+            const message = messages[index]
+
+            if (message.role === 'user') {
+                sendMessage(message.content, { images: message.images }, messageId)
+            } else if (message.role === 'assistant') {
+                // Find the last user message before this assistant message
+                const lastUserMessage = [...messages.slice(0, index)].reverse().find(m => m.role === 'user')
+                if (lastUserMessage) {
+                    sendMessage(lastUserMessage.content, { images: lastUserMessage.images }, lastUserMessage.id)
+                }
+            }
         },
         [messages, sendMessage]
     )
@@ -163,7 +197,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
     const resendLastMessage = useCallback(() => {
         const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user')
         if (lastUserMessage) {
-            sendMessage(lastUserMessage.content, { images: lastUserMessage.images })
+            sendMessage(lastUserMessage.content, { images: lastUserMessage.images }, lastUserMessage.id)
         }
     }, [messages, sendMessage])
 
@@ -171,12 +205,27 @@ export function useChat(conversationId: string | null): UseChatReturn {
         const api = getLocalAI()
         if (!api) return
         api.chat.stopGeneration()
+
+        // Immediately update local state to reflect that streaming has stopped
+        setIsStreaming(false)
+        streamingRef.current = false
+        setStreamingContent('')
     }, [])
+
+    const switchVersion = useCallback(async (messageId: string) => {
+        const api = getLocalAI()
+        if (!api || !conversationId) return
+        await api.chat.switchVersion(conversationId, messageId)
+        // Reload messages to get updated isActive states
+        const msgs = await api.conversations.getMessages(conversationId)
+        setMessages(msgs)
+    }, [conversationId])
 
     const clearError = useCallback(() => setError(null), [])
 
     return {
-        messages,
+        messages: messages.filter(m => m.role !== 'assistant' || m.isActive !== false || m.isAborted), // For linear UI
+        allMessages: messages, // Export all for version finding
         streamingContent,
         isStreaming,
         error,
@@ -184,6 +233,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
         stopGeneration,
         clearError,
         retryMessage,
-        resendLastMessage
+        resendLastMessage,
+        switchVersion
     }
 }

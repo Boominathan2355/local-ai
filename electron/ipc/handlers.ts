@@ -66,19 +66,18 @@ async function getCompletion(
     })
 }
 
-async function generateSearchQuery(content: string, baseUrl: string, isCloud: boolean, cloudService?: CloudModelService, cloudOptions?: any): Promise<string> {
+async function generateSearchQuery(content: string, baseUrl: string, isCloud: boolean, signal: AbortSignal, cloudService?: CloudModelService, cloudOptions?: any): Promise<string> {
     const prompt = `Convert the following user message into a short, effective search engine query. Return ONLY the search query text.\n\nUser Message: ${content}`
     const messages = [{ role: 'system', content: 'You are a search query optimizer.' }, { role: 'user', content: prompt }]
 
     try {
         if (isCloud && cloudService && cloudOptions) {
-            // Simplified for now - use non-streaming for query generation if possible, but cloudService only has streaming. 
-            // We'll use the local model for query generation to keep it fast and free if available, otherwise just use the raw content.
             return content
         } else {
-            return await getCompletion(baseUrl, messages, undefined, 0.3, 50)
+            return await getCompletion(baseUrl, messages, signal, 0.3, 50)
         }
     } catch (err) {
+        if (err instanceof Error && err.message === 'aborted') throw err
         console.error('[Search] Query generation failed:', err)
         return content
     }
@@ -196,7 +195,7 @@ export function registerIpcHandlers(
     })
 
     // --- Chat ---
-    ipcMain.handle(IPC_CHANNELS.CHAT_SEND_MESSAGE, async (event, conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean) => {
+    ipcMain.handle(IPC_CHANNELS.CHAT_SEND_MESSAGE, async (event, conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean, retryId?: string) => {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) return { error: 'No window' }
 
@@ -209,20 +208,43 @@ export function registerIpcHandlers(
         const isCloudModel = selectedModel && selectedModel.provider !== 'local'
 
         if (!isCloudModel && llamaServer.status !== 'ready' && llamaServer.status !== 'generating') {
+            console.warn(`[Chat] Local model not ready. Status: ${llamaServer.status}`)
             return { error: 'Local model not ready' }
         }
 
-        storage.setGenerating(true)
-        const userMessage: ChatMessage = {
-            id: generateId(),
-            conversationId,
-            role: 'user',
-            content,
-            tokenCount: estimateTokens(content),
-            createdAt: Date.now()
+        console.log(`[Chat] Starting message for conversation: ${conversationId}`)
+        let currentVersion = 1
+        const userMessageId = retryId || generateId()
+
+        if (retryId) {
+            console.log(`[Chat] Creating new version for message: ${retryId}`)
+            const existingMessages = storage.getMessages(conversationId)
+
+            // If the content changed (e.g., from an edit), update the original user message
+            const existingUserMsg = existingMessages.find(m => m.id === retryId)
+            if (existingUserMsg && existingUserMsg.content !== content) {
+                console.log(`[Chat] Updating content for message ${retryId}`)
+                storage.updateMessage(conversationId, retryId, content)
+                window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, {
+                    conversationId,
+                    message: { ...existingUserMsg, content }
+                })
+            }
+
+            const versions = existingMessages.filter(m => m.replyToId === retryId)
+            currentVersion = versions.length + 1
+        } else {
+            const userMessage: ChatMessage = {
+                id: userMessageId,
+                conversationId,
+                role: 'user',
+                content,
+                tokenCount: estimateTokens(content),
+                createdAt: Date.now()
+            }
+            storage.addMessage(userMessage)
+            window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: userMessage })
         }
-        storage.addMessage(userMessage)
-        window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: userMessage })
 
         const conversation = storage.getConversation(conversationId)
         if (conversation && conversation.title === 'New Chat') {
@@ -238,13 +260,13 @@ export function registerIpcHandlers(
 
             if (searchEnabled && (settings.serperApiKey || settings.tavilyApiKey)) {
                 try {
-                    const refinedQuery = await generateSearchQuery(content, llamaServer.baseUrl, !!isCloudModel)
+                    const refinedQuery = await generateSearchQuery(content, llamaServer.baseUrl, !!isCloudModel, activeAbortController.signal)
                     console.log(`[Search] Original: "${content}" -> Refined: "${refinedQuery}"`)
 
                     const searchResults = await searchService.search(refinedQuery, {
                         serperApiKey: settings.serperApiKey,
                         tavilyApiKey: settings.tavilyApiKey
-                    })
+                    }, activeAbortController.signal)
 
                     if (searchResults.length > 0) {
                         const contextString = searchResults.map(r => `Source: ${r.title}\nURL: ${r.link}\nSnippet: ${r.snippet}`).join('\n\n')
@@ -258,11 +280,13 @@ export function registerIpcHandlers(
                         ]
                     }
                 } catch (searchErr) {
+                    if (searchErr instanceof Error && searchErr.message === 'aborted') throw searchErr
                     console.error('[SearchService] Search failed:', searchErr)
                     // Continue with normal chat if search fails
                 }
             }
 
+            console.log(`[Chat] Sending request to ${isCloudModel ? 'cloud' : 'local'} model...`)
             let assistantContent = ''
             if (isCloudModel && selectedModel) {
                 const options = {
@@ -278,44 +302,82 @@ export function registerIpcHandlers(
                     options.apiKey = settings.openaiApiKey || ''
                     if (!options.apiKey) throw new Error('OpenAI API Key is missing in settings')
                     assistantContent = await cloudModelService.streamOpenAI(options, (token) => {
+                        assistantContent += token
                         window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token, done: false })
                     }, activeAbortController.signal)
                 } else if (selectedModel.provider === 'anthropic') {
                     options.apiKey = settings.anthropicApiKey || ''
                     if (!options.apiKey) throw new Error('Anthropic API Key is missing in settings')
                     assistantContent = await cloudModelService.streamAnthropic(options, (token) => {
+                        assistantContent += token
                         window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token, done: false })
                     }, activeAbortController.signal)
                 } else if (selectedModel.provider === 'google') {
                     options.apiKey = settings.geminiApiKey || ''
                     if (!options.apiKey) throw new Error('Gemini API Key is missing in settings')
                     assistantContent = await cloudModelService.streamGemini(options, (token) => {
+                        assistantContent += token
                         window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token, done: false })
                     }, activeAbortController.signal)
                 }
             } else {
                 assistantContent = await streamCompletion(llamaServer.baseUrl, messages, activeAbortController.signal, (token) => {
+                    assistantContent += token
                     window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token, done: false })
                 }, ["<|user|>", "user:", "<|assistant|>", "assistant:"], settings.temperature, settings.maxTokens)
             }
+            console.log(`[Chat] Generation complete, length: ${assistantContent.length}`)
 
-            const assistantMsg: ChatMessage = { id: generateId(), conversationId, role: 'assistant', content: assistantContent, tokenCount: estimateTokens(assistantContent), createdAt: Date.now() }
+            const assistantMsg: ChatMessage = {
+                id: generateId(),
+                conversationId,
+                role: 'assistant',
+                content: assistantContent,
+                tokenCount: estimateTokens(assistantContent),
+                createdAt: Date.now(),
+                replyToId: userMessageId,
+                version: currentVersion,
+                isActive: true
+            }
+            if (retryId) {
+                storage.switchActiveVersion(conversationId, assistantMsg.id)
+            }
+
             storage.addMessage(assistantMsg)
             window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: assistantMsg })
             window.webContents.send(IPC_CHANNELS.CHAT_STREAM_COMPLETE, { conversationId })
             return { success: true }
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Error'
-            if (msg !== 'aborted') window.webContents.send(IPC_CHANNELS.CHAT_STREAM_ERROR, { conversationId, error: msg })
+            if (msg !== 'aborted') {
+                window.webContents.send(IPC_CHANNELS.CHAT_STREAM_ERROR, { conversationId, error: msg })
+            } else {
+                window.webContents.send(IPC_CHANNELS.CHAT_STREAM_COMPLETE, { conversationId })
+            }
             return { error: msg }
         } finally {
             storage.setGenerating(false)
+            // Broadcast final status
+            window.webContents.send(IPC_CHANNELS.CONVERSATION_LIST, storage.getConversations())
             activeAbortController = null
         }
     })
 
     ipcMain.handle(IPC_CHANNELS.CHAT_STOP_GENERATION, () => {
         if (activeAbortController) activeAbortController.abort()
+        storage.setGenerating(false)
+        // Broadcast update to all listeners (sidebar etc)
+        BrowserWindow.getAllWindows().forEach(w => {
+            w.webContents.send(IPC_CHANNELS.CONVERSATION_LIST, storage.getConversations())
+        })
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.CHAT_SWITCH_VERSION, (_event, conversationId: string, messageId: string) => {
+        storage.switchActiveVersion(conversationId, messageId)
+        BrowserWindow.getAllWindows().forEach(w => {
+            w.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId })
+        })
         return { success: true }
     })
 
@@ -411,6 +473,7 @@ function streamCompletion(
                     } catch { /* skip */ }
                 }
             })
+            res.on('error', (e) => reject(e))
             res.on('end', () => resolve(acc))
         })
         signal.addEventListener('abort', () => req.destroy())

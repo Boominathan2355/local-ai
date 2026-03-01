@@ -428,6 +428,53 @@
     color: var(--text-primary);
 }
 
+/* Version Pager */
+.version-pager {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 2px 4px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    width: fit-content;
+}
+
+.version-pager__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.version-pager__btn:hover:not(:disabled) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.version-pager__btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.version-pager__info {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 32px;
+    text-align: center;
+    user-select: none;
+}
+
 /* ===========================
    Markdown Styles
    =========================== */
@@ -980,69 +1027,112 @@
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    border: 1px solid var(--border-main);
-    background: var(--bg-primary);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-secondary);
     color: var(--text-secondary);
     transition: all var(--transition-fast);
 }
 
 .message__edit-actions button:hover {
-    background: var(--bg-hover);
+    background: var(--bg-tertiary);
     color: var(--text-primary);
+    border-color: var(--border-main);
 }
 
 .message__edit-actions .message__edit-save {
     background: var(--accent-primary);
-    color: #fff;
+    color: white;
     border: none;
 }
 
 .message__edit-actions .message__edit-save:hover {
-    background: var(--accent-secondary);
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
 }
 
 .chat__error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 16px;
-    padding: 24px;
-    background: rgba(239, 68, 68, 0.03);
-    border: 1px dashed var(--status-error);
-    border-radius: var(--radius-lg);
-    margin: 20px 0;
+    gap: 20px;
+    padding: 32px;
+    background: rgba(239, 68, 68, 0.04);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(239, 68, 68, 0.15);
+    border-radius: 24px;
+    margin: 40px auto;
+    max-width: 480px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    animation: error-appear 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes error-appear {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .chat__error-message {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 10px;
-    color: var(--status-error);
-    font-size: 14px;
-    font-weight: 500;
+    gap: 12px;
     text-align: center;
+}
+
+.chat__error-icon-wrapper {
+    width: 52px;
+    height: 52px;
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--status-error);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 4px;
+}
+
+.chat__error-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.chat__error-text {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    max-width: 320px;
 }
 
 .chat__retry-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 20px;
+    gap: 10px;
+    padding: 12px 32px;
     background: var(--status-error);
     color: #fff;
     border: none;
-    border-radius: var(--radius-md);
+    border-radius: 30px;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: var(--shadow-sm);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 
 .chat__retry-btn:hover {
-    transform: translateY(-1px);
     background: #dc2626;
-    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
 }
 
 .chat__retry-btn:active {

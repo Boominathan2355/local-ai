@@ -45,13 +45,15 @@ const App: React.FC = () => {
 
     const {
         messages,
+        allMessages,
         streamingContent,
         isStreaming,
         error,
         sendMessage,
         stopGeneration,
         retryMessage,
-        resendLastMessage
+        resendLastMessage,
+        switchVersion
     } = useChat(activeConversationId)
 
     const { status: modelStatus, isReady: modelReady } = useModelStatus()
@@ -127,18 +129,24 @@ const App: React.FC = () => {
         })
     }, [])
 
-    const handleSendMessage = (content: string): void => {
+    const handleSendMessage = (content: string, images?: string[], searchEnabled?: boolean, retryId?: string): void => {
+        const options = {
+            systemPrompt: settings.systemPrompt,
+            images,
+            searchEnabled
+        }
+
         if (!activeConversationId) {
             const api = getLocalAI()
             if (api) {
                 api.conversations.create().then((conversation) => {
                     selectConversation(conversation.id)
-                    setTimeout(() => sendMessage(content, { systemPrompt: settings.systemPrompt }), 50)
+                    setTimeout(() => sendMessage(content, options, retryId), 50)
                 })
             }
             return
         }
-        sendMessage(content, { systemPrompt: settings.systemPrompt })
+        sendMessage(content, options, retryId)
     }
 
     // Show loading state while checking setup
@@ -162,6 +170,7 @@ const App: React.FC = () => {
                 activeConversationId={activeConversationId}
                 onSelectConversation={selectConversation}
                 onDeleteConversation={deleteConversation}
+                onAbortConversation={stopGeneration}
                 onNewChat={createConversation}
                 onOpenSettings={() => setIsSettingsOpen(true)}
                 onOpenLibrary={() => setIsLibraryOpen(true)}
@@ -171,6 +180,8 @@ const App: React.FC = () => {
 
             <ChatWindow
                 messages={messages}
+                allMessages={allMessages}
+                onSwitchVersion={switchVersion}
                 streamingContent={streamingContent}
                 isStreaming={isStreaming}
                 error={error}
