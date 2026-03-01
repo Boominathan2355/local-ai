@@ -3,7 +3,6 @@ import {
     Rocket,
     Download,
     Check,
-    Star,
     Sparkles,
     Cpu,
     Shield,
@@ -12,7 +11,7 @@ import {
 } from 'lucide-react'
 
 import { getLocalAI } from '../../helpers/ipc.helper'
-import { getBestFitModelId, getRecommendation } from '../../helpers/recommendation.helper'
+import { getRecommendation } from '../../helpers/recommendation.helper'
 import type { SystemInfo } from '../../helpers/recommendation.helper'
 
 interface DownloadableModel {
@@ -262,16 +261,8 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                         {model.downloaded ? (
                                             <span className="model-card__badge model-card__badge--downloaded">Downloaded</span>
                                         ) : selectedModelId === model.id ? (
-                                            <span className="model-card__badge model-card__badge--recommended" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                                {systemInfo ? (
-                                                    <>
-                                                        {getRecommendation(models, systemInfo)?.reason.includes('VRAM') || getRecommendation(models, systemInfo)?.reason.includes('GPU') ? <Rocket size={12} /> :
-                                                            getRecommendation(models, systemInfo)?.reason.includes('CPU') ? <Cpu size={12} /> :
-                                                                getRecommendation(models, systemInfo)?.reason.includes('Lightweight') ? <Sparkles size={12} /> :
-                                                                    <Star size={12} />}
-                                                        {getRecommendation(models, systemInfo)?.reason}
-                                                    </>
-                                                ) : 'Recommended'}
+                                            <span className="model-card__badge model-card__badge--recommended">
+                                                {systemInfo ? getRecommendation(models, systemInfo)?.reason : 'Recommended'}
                                             </span>
                                         ) : null}
                                     </div>

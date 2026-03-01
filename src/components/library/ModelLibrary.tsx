@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Star, Sparkles, Cpu, Feather, Lightbulb, Zap, Database, Wrench, Bot, Library as LibraryIcon, CheckCircle2, AlertTriangle, XCircle, X, Download } from 'lucide-react'
+import { Zap, Bot, Library as LibraryIcon, CheckCircle2, AlertTriangle, XCircle, X, Download } from 'lucide-react'
 import { getLocalAI } from '../../helpers/ipc.helper'
 import { getCompatibility, getBestFitModelId, getRecommendation } from '../../helpers/recommendation.helper'
 import type { SystemInfo, CompatibilityStatus, ModelInfo } from '../../helpers/recommendation.helper'
@@ -197,11 +197,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                             </span>
                         )}
                         {isRecommended && !model.downloaded && (
-                            <span className="library__card-badge library__card-badge--recommended" style={{ background: 'var(--accent-primary)', color: 'white', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                {rec?.reason.includes('VRAM') || rec?.reason.includes('GPU') ? <Zap size={10} /> :
-                                    rec?.reason.includes('CPU') ? <Cpu size={10} /> :
-                                        rec?.reason.includes('Lightweight') ? <Sparkles size={10} /> :
-                                            <Star size={10} />}
+                            <span className="library__card-badge library__card-badge--recommended" style={{ background: 'var(--accent-primary)', color: 'white' }}>
                                 {rec?.reason.toUpperCase()}
                             </span>
                         )}
@@ -347,8 +343,8 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
         <div className="library-overlay" id="model-library">
             <div className="library">
                 <header className="library__header">
-                    <h2 className="library__title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <LibraryIcon size={24} /> Model Library
+                    <h2 className="library__title">
+                        Model Library
                     </h2>
                     <button className="library__close" onClick={onClose} id="library-close"><X size={20} /></button>
                 </header>
