@@ -6,6 +6,8 @@ export interface ModelStatus {
     modelTier: string | null
     error: string | null
     tokensPerSecond: number | null
+    supportsVision?: boolean
+    supportsThinking?: boolean
 }
 
 export interface ServerConfig {

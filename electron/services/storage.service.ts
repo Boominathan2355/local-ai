@@ -47,6 +47,7 @@ export class StorageService extends EventEmitter {
     private readonly filePath: string
     private isGenerating = false
     private activeGeneratingId: string | null = null
+    private hasNvidiaGpu = false
 
     constructor() {
         super()
@@ -55,6 +56,13 @@ export class StorageService extends EventEmitter {
         this.filePath = path.join(userDataPath, STORAGE_FILE)
         this.data = this.load()
         this.save()
+
+        try {
+            execSync('nvidia-smi --version', { stdio: 'ignore' })
+            this.hasNvidiaGpu = true
+        } catch {
+            this.hasNvidiaGpu = false
+        }
     }
 
     // --- Monitoring ---
@@ -94,16 +102,23 @@ export class StorageService extends EventEmitter {
         let gpuMemoryTotalMB: number | undefined
         let gpuMemoryFreeMB: number | undefined
 
-        try {
-            // Basic NVIDIA detection on Linux
-            const nvidiaOutput = execSync('nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits', { encoding: 'utf-8', timeout: 3000 }).trim()
-            if (nvidiaOutput) {
-                const [name, total, free] = nvidiaOutput.split(',').map(s => s.trim())
-                gpuName = name
-                gpuMemoryTotalMB = parseInt(total)
-                gpuMemoryFreeMB = parseInt(free)
-            }
-        } catch { /* skip if no nvidia-smi */ }
+        if (this.hasNvidiaGpu) {
+            try {
+                // Basic NVIDIA detection on Linux
+                const nvidiaOutput = execSync('nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits', {
+                    encoding: 'utf-8',
+                    timeout: 3000,
+                    stdio: ['ignore', 'pipe', 'ignore']
+                }).trim()
+
+                if (nvidiaOutput) {
+                    const [name, total, free] = nvidiaOutput.split(',').map(s => s.trim())
+                    gpuName = name
+                    gpuMemoryTotalMB = parseInt(total)
+                    gpuMemoryFreeMB = parseInt(free)
+                }
+            } catch { /* skip if command fails */ }
+        }
 
         return {
             totalRamMB,
@@ -247,17 +262,23 @@ export class StorageService extends EventEmitter {
         // Filter out inactive assistant versions
         const filteredMessages = allMessages.filter(m => m.role !== 'assistant' || m.isActive !== false)
 
-        const result: ChatMessage[] = []
-        let tokenCount = 0
+        const systemMessages = filteredMessages.filter(m => m.role === 'system')
+        const otherMessages = filteredMessages.filter(m => m.role !== 'system')
 
-        for (let i = filteredMessages.length - 1; i >= 0; i--) {
-            const msg = filteredMessages[i]
-            if (tokenCount + msg.tokenCount > maxTokens) break
-            result.unshift(msg)
-            tokenCount += msg.tokenCount
+        const result: ChatMessage[] = [...systemMessages]
+        let currentTokens = systemMessages.reduce((sum, m) => sum + (m.tokenCount || 0), 0)
+
+        // Add regular messages from the most recent backwards until maxTokens is reached
+        const recentMessages: ChatMessage[] = []
+        for (let i = otherMessages.length - 1; i >= 0; i--) {
+            const msg = otherMessages[i]
+            const msgTokens = msg.tokenCount || 0
+            if (currentTokens + msgTokens > maxTokens) break
+            recentMessages.unshift(msg)
+            currentTokens += msgTokens
         }
 
-        return result
+        return [...result, ...recentMessages]
     }
 
     // --- Settings ---

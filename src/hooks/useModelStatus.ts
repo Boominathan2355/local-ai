@@ -6,6 +6,8 @@ import type { ModelStatusType } from '../types/model.types'
 interface UseModelStatusReturn {
     status: ModelStatusType
     isReady: boolean
+    supportsVision: boolean
+    supportsThinking: boolean
 }
 
 /**
@@ -13,6 +15,8 @@ interface UseModelStatusReturn {
  */
 export function useModelStatus(): UseModelStatusReturn {
     const [status, setStatus] = useState<ModelStatusType>('disconnected')
+    const [supportsVision, setSupportsVision] = useState(false)
+    const [supportsThinking, setSupportsThinking] = useState(false)
     const cleanupRef = useRef<(() => void) | null>(null)
 
     useEffect(() => {
@@ -22,11 +26,23 @@ export function useModelStatus(): UseModelStatusReturn {
         // Get initial status
         api.model.getStatus().then((modelStatus) => {
             setStatus(modelStatus.status)
+            setSupportsVision(!!(modelStatus as any).supportsVision)
+            setSupportsThinking(!!(modelStatus as any).supportsThinking)
         })
 
         // Subscribe to changes
-        cleanupRef.current = api.model.onStatusChanged((newStatus) => {
-            setStatus(newStatus as ModelStatusType)
+        cleanupRef.current = api.model.onStatusChanged((newStatus: any) => {
+            if (typeof newStatus === 'string') {
+                setStatus(newStatus as ModelStatusType)
+            } else if (newStatus && typeof newStatus === 'object') {
+                setStatus(newStatus.status)
+                if (newStatus.supportsVision !== undefined) {
+                    setSupportsVision(!!newStatus.supportsVision)
+                }
+                if (newStatus.supportsThinking !== undefined) {
+                    setSupportsThinking(!!newStatus.supportsThinking)
+                }
+            }
         })
 
         return () => {
@@ -36,6 +52,8 @@ export function useModelStatus(): UseModelStatusReturn {
 
     return {
         status,
-        isReady: status === 'ready'
+        isReady: status === 'ready',
+        supportsVision,
+        supportsThinking
     }
 }

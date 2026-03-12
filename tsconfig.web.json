@@ -23,6 +23,8 @@
     },
     "include": [
         "src/**/*",
-        "src/**/*.tsx"
+        "src/**/*.tsx",
+        "electron/preload/index.ts",
+        "electron/ipc/channels.ts"
     ]
 }

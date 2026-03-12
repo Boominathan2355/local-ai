@@ -7,11 +7,13 @@ import {
     Edit3,
     User,
     Bot,
-    AlertCircle
+    AlertCircle,
+    Reply
 } from 'lucide-react'
 
 import { MarkdownRenderer } from './MarkdownRenderer'
 import type { ChatMessage } from '../../types/chat.types'
+import { ReasoningBlock } from './ReasoningBlock'
 
 import { VersionPager } from './VersionPager'
 
@@ -19,6 +21,7 @@ interface MessageBubbleProps {
     message: ChatMessage
     onRetry?: (id: string) => void
     onEdit?: (id: string, content: string) => void
+    onReply?: (id: string, selectedText?: string) => void
     isLast?: boolean
     allMessages?: ChatMessage[]
     onSwitchVersion?: (messageId: string) => void
@@ -41,6 +44,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     message,
     onRetry,
     onEdit,
+    onReply,
     isLast,
     allMessages = [],
     onSwitchVersion
@@ -56,6 +60,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             .filter(m => m.replyToId === message.replyToId)
             .sort((a, b) => (a.version || 0) - (b.version || 0))
         : []
+
+    const quotedMessage = message.quotedMessageId ? allMessages.find(m => m.id === message.quotedMessageId) : null
 
     const currentVersionIdx = siblings.findIndex(s => s.id === message.id)
     const totalVersions = siblings.length
@@ -93,6 +99,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         }
     }
 
+    const handleReply = () => {
+        if (!onReply) return
+        const selection = window.getSelection()
+        const selectedText = selection ? selection.toString().trim() : ''
+        onReply(message.id, selectedText || undefined)
+    }
+
     const hasImages = message.images && message.images.length > 0
     const isError = (message as any).isError // We might need to flag failed messages
 
@@ -105,6 +118,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     </div>
                 )}
                 <div className={isUser ? 'message__bubble' : 'message__flat'}>
+                    {/* Quoted Message Preview */}
+                    {quotedMessage && (
+                        <div className="message__quoted" onClick={() => document.getElementById(`message-${quotedMessage.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}>
+                            <div className="message__quoted-author">Replied to {quotedMessage.role === 'user' ? 'You' : 'Assistant'}</div>
+                            <div className="message__quoted-text">{message.quotedMessageText || quotedMessage.content}</div>
+                        </div>
+                    )}
+
                     {/* Image attachments */}
                     {hasImages && (
                         <div className="message__images">
@@ -163,6 +184,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         <div className="message__content">{message.content}</div>
                     ) : (
                         <div className="message__content message__content--markdown">
+                            {message.reasoningContent && (
+                                <ReasoningBlock reasoningContent={message.reasoningContent} />
+                            )}
                             <MarkdownRenderer content={message.content} />
                         </div>
                     )}
@@ -184,6 +208,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             </div>
 
             <div className={`message__actions ${isUser ? 'message__actions--right' : 'message__actions--left'}`}>
+                <button className="message__action-btn" onClick={handleReply} title="Reply">
+                    <Reply size={14} />
+                </button>
                 <button className="message__action-btn" onClick={handleCopy} title="Copy">
                     {copied ? <Check size={14} /> : <Copy size={14} />}
                 </button>

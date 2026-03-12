@@ -13,6 +13,9 @@ export interface ChatMessage {
     modelId?: string
     modelName?: string
     replyToId?: string
+    quotedMessageId?: string // Link to the message being replied to
+    quotedMessageText?: string // Specific selected text that was quoted
+    reasoningContent?: string // Content within <think> tags
     siblingIds?: string[]
     version?: number
     isActive?: boolean
@@ -20,6 +23,7 @@ export interface ChatMessage {
 
 export interface StreamingState {
     isStreaming: boolean
+    isThinking?: boolean
     currentContent: string
     abortController: AbortController | null
 }
@@ -35,6 +39,8 @@ export type SendMessagePayload = {
     content: string
     systemPrompt: string
     images?: string[]
+    quotedMessageId?: string
+    quotedMessageText?: string
 }
 
 export type StreamTokenEvent = {

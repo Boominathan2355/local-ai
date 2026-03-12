@@ -44,12 +44,19 @@ export const IPC_CHANNELS = {
     DOWNLOAD_GET_MODELS: 'download:get-models',
     DOWNLOAD_GET_DOWNLOADED: 'download:get-downloaded',
     DOWNLOAD_START_MODEL: 'download:start-model',
-    DOWNLOAD_START_BINARY: 'download:start-binary',
     DOWNLOAD_CANCEL: 'download:cancel',
     DOWNLOAD_PROGRESS: 'download:progress',
     DOWNLOAD_COMPLETE: 'download:complete',
     DOWNLOAD_ERROR: 'download:error',
-    SETUP_GET_STATUS: 'setup:get-status'
+
+    // Setup
+    SETUP_GET_STATUS: 'setup:get-status',
+    SETUP_CHECK_UPDATES: 'setup:check-updates',
+    SETUP_INSTALL_ENGINE: 'setup:install-engine',
+    SETUP_UPDATE_ENGINE: 'setup:update-engine',
+    SETUP_PROGRESS: 'setup:progress',
+    SETUP_COMPLETE: 'setup:complete',
+    SETUP_ERROR: 'setup:error'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

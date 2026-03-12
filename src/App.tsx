@@ -43,6 +43,9 @@ const App: React.FC = () => {
         selectConversation
     } = useConversations()
 
+    const { status: modelStatus, isReady: modelReady, supportsVision, supportsThinking } = useModelStatus()
+    const { settings, updateSettings } = useSettings()
+
     const {
         messages,
         allMessages,
@@ -54,10 +57,7 @@ const App: React.FC = () => {
         retryMessage,
         resendLastMessage,
         switchVersion
-    } = useChat(activeConversationId)
-
-    const { status: modelStatus, isReady: modelReady } = useModelStatus()
-    const { settings, updateSettings } = useSettings()
+    } = useChat(activeConversationId, supportsThinking)
 
     // Apply theme to document root
     useEffect(() => {
@@ -129,11 +129,13 @@ const App: React.FC = () => {
         })
     }, [])
 
-    const handleSendMessage = (content: string, images?: string[], searchEnabled?: boolean, retryId?: string): void => {
+    const handleSendMessage = (content: string, images?: string[], searchEnabled?: boolean, retryId?: string, quotedMessageId?: string, quotedMessageText?: string): void => {
         const options = {
             systemPrompt: settings.systemPrompt,
             images,
-            searchEnabled
+            searchEnabled,
+            quotedMessageId,
+            quotedMessageText
         }
 
         if (!activeConversationId) {
@@ -194,6 +196,7 @@ const App: React.FC = () => {
                 onRetryMessage={retryMessage}
                 onResendLast={resendLastMessage}
                 modelStatus={modelStatus}
+                supportsVision={supportsVision}
                 onSwitchModel={handleSwitchModel}
                 settings={settings}
                 onUpdateSettings={updateSettings}

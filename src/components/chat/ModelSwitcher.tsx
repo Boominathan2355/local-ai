@@ -10,6 +10,7 @@ interface Model {
     downloaded?: boolean
     sizeGB?: number
     provider?: string
+    supportsVision?: boolean
 }
 
 interface ModelSwitcherProps {
@@ -102,6 +103,7 @@ export const ModelSwitcher: React.FC<ModelSwitcherProps> = ({
                                                 {model.name}
                                                 {model.tier === 'cloud' && <span className="switcher__item-cloud-tag">Cloud</span>}
                                                 {model.tier === 'agent' && <span className="switcher__item-agent-tag">Bot</span>}
+                                                {model.supportsVision && <span className="switcher__item-vision-tag">Vision</span>}
                                             </span>
                                             <span className="switcher__item-size">
                                                 {model.provider ? 'Remote' : `${model.sizeGB} GB`}

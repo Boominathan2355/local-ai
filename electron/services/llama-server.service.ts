@@ -20,6 +20,7 @@ const DEFAULT_CONFIG = {
 interface LlamaServerConfig {
     binaryPath: string
     modelPath: string
+    mmprojPath?: string
     port?: number
     host?: string
     threads?: number
@@ -37,8 +38,9 @@ export class LlamaServerService extends EventEmitter {
     private restartCount = 0
     private isShuttingDown = false
     private currentStatus: ModelStatusType = 'disconnected'
+    private metadata = { supportsVision: false, supportsThinking: false }
 
-    private config: Required<LlamaServerConfig>
+    private config: LlamaServerConfig & Required<Omit<LlamaServerConfig, 'mmprojPath'>>
 
     constructor(config: LlamaServerConfig) {
         super()
@@ -49,7 +51,8 @@ export class LlamaServerService extends EventEmitter {
             contextSize: config.contextSize ?? DEFAULT_CONFIG.contextSize,
             gpuLayers: config.gpuLayers ?? DEFAULT_CONFIG.gpuLayers,
             binaryPath: config.binaryPath,
-            modelPath: config.modelPath
+            modelPath: config.modelPath,
+            mmprojPath: config.mmprojPath
         }
     }
 
@@ -64,14 +67,18 @@ export class LlamaServerService extends EventEmitter {
     /**
      * Updates the server configuration. Call before start() if paths changed.
      */
-    updateConfig(partial: Partial<LlamaServerConfig>): void {
+    updateConfig(partial: Partial<LlamaServerConfig> & { supportsVision?: boolean, supportsThinking?: boolean }): void {
         if (partial.binaryPath) this.config.binaryPath = partial.binaryPath
         if (partial.modelPath) this.config.modelPath = partial.modelPath
+        if (partial.mmprojPath !== undefined) this.config.mmprojPath = partial.mmprojPath ?? undefined
         if (partial.port) this.config.port = partial.port
         if (partial.host) this.config.host = partial.host
         if (partial.threads) this.config.threads = partial.threads
         if (partial.contextSize) this.config.contextSize = partial.contextSize
         if (partial.gpuLayers !== undefined) this.config.gpuLayers = partial.gpuLayers
+
+        if (partial.supportsVision !== undefined) this.metadata.supportsVision = !!partial.supportsVision
+        if (partial.supportsThinking !== undefined) this.metadata.supportsThinking = !!partial.supportsThinking
     }
 
     /**
@@ -84,6 +91,13 @@ export class LlamaServerService extends EventEmitter {
         if (!existsSync(this.config.modelPath)) {
             return { valid: false, error: `Model file not found at: ${this.config.modelPath}` }
         }
+
+        // Hard safety check: ensure the main model is NOT a vision projector or CLIP file
+        const filename = path.basename(this.config.modelPath).toLowerCase()
+        if (filename.includes('mmproj') || filename.includes('clip')) {
+            return { valid: false, error: `Invalid primary model file selected: ${filename}. Vision projectors cannot be loaded as main models.` }
+        }
+
         return { valid: true }
     }
 
@@ -109,6 +123,11 @@ export class LlamaServerService extends EventEmitter {
             '--host', this.config.host,
             '--port', String(this.config.port)
         ]
+
+        if (this.config.mmprojPath) {
+            args.push('--mmproj', this.config.mmprojPath)
+            console.log(`[LlamaServer] Vision enabled with mmproj: ${this.config.mmprojPath}`)
+        }
 
         try {
             this.process = spawn(this.config.binaryPath, args, {
@@ -256,6 +275,9 @@ export class LlamaServerService extends EventEmitter {
 
     private setStatus(status: ModelStatusType): void {
         this.currentStatus = status
-        this.emit('statusChanged', status)
+        this.emit('statusChanged', {
+            status,
+            ...this.metadata
+        })
     }
 }

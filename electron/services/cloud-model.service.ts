@@ -5,6 +5,7 @@ export interface CloudChatOptions {
     apiKey: string;
     model: string;
     messages: Array<{ role: string; content: string }>;
+    images?: string[];
     temperature?: number;
     maxTokens?: number;
     stream: boolean;
@@ -15,6 +16,9 @@ export class CloudModelService {
      * Streams completions from OpenAI-compatible APIs.
      */
     async streamOpenAI(options: CloudChatOptions, onToken: (token: string) => void, signal: AbortSignal): Promise<string> {
+        // Build multimodal messages: only the last user message gets the images
+        const messages = this.buildOpenAIMessages(options.messages, options.images)
+
         return this.streamHttpsRequest({
             url: 'https://api.openai.com/v1/chat/completions',
             headers: {
@@ -23,7 +27,7 @@ export class CloudModelService {
             },
             body: {
                 model: options.model,
-                messages: options.messages,
+                messages,
                 temperature: options.temperature,
                 max_tokens: options.maxTokens,
                 stream: true
@@ -46,6 +50,8 @@ export class CloudModelService {
      * Streams completions from Anthropic API.
      */
     async streamAnthropic(options: CloudChatOptions, onToken: (token: string) => void, signal: AbortSignal): Promise<string> {
+        const messages = this.buildAnthropicMessages(options.messages, options.images)
+
         return this.streamHttpsRequest({
             url: 'https://api.anthropic.com/v1/messages',
             headers: {
@@ -55,7 +61,7 @@ export class CloudModelService {
             },
             body: {
                 model: options.model,
-                messages: options.messages.filter(m => m.role !== 'system'),
+                messages: messages.filter(m => m.role !== 'system'),
                 system: options.messages.find(m => m.role === 'system')?.content,
                 max_tokens: options.maxTokens || 1024,
                 temperature: options.temperature,
@@ -83,16 +89,16 @@ export class CloudModelService {
     async streamGemini(options: CloudChatOptions, onToken: (token: string) => void, signal: AbortSignal): Promise<string> {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${options.model}:streamGenerateContent?alt=sse&key=${options.apiKey}`;
 
+        // Build Gemini contents with optional image support
+        const contents = this.buildGeminiContents(options.messages, options.images)
+
         return this.streamHttpsRequest({
             url,
             headers: {
                 'Content-Type': 'application/json'
             },
             body: {
-                contents: options.messages.map(m => ({
-                    role: m.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: m.content }]
-                })),
+                contents,
                 generationConfig: {
                     temperature: options.temperature,
                     maxOutputTokens: options.maxTokens
@@ -109,6 +115,82 @@ export class CloudModelService {
                 }
             }
         });
+    }
+
+    // --- Multimodal helpers ---
+
+    private buildOpenAIMessages(
+        messages: Array<{ role: string; content: string }>,
+        images?: string[]
+    ): Array<{ role: string; content: any }> {
+        if (!images || images.length === 0) return messages as any
+
+        return messages.map((msg, i) => {
+            // Attach images to the last user message
+            if (msg.role === 'user' && i === messages.length - 1) {
+                const parts: any[] = [{ type: 'text', text: msg.content }]
+                for (const img of images) {
+                    parts.push({ type: 'image_url', image_url: { url: img } })
+                }
+                return { role: 'user', content: parts }
+            }
+            return msg
+        })
+    }
+
+    private buildAnthropicMessages(
+        messages: Array<{ role: string; content: string }>,
+        images?: string[]
+    ): Array<{ role: string; content: any }> {
+        if (!images || images.length === 0) return messages as any
+
+        return messages.map((msg, i) => {
+            if (msg.role === 'user' && i === messages.length - 1) {
+                const parts: any[] = []
+                for (const img of images) {
+                    // Extract mime type and base64 data from data URL
+                    const match = img.match(/^data:([^;]+);base64,(.+)$/)
+                    if (match) {
+                        parts.push({
+                            type: 'image',
+                            source: { type: 'base64', media_type: match[1], data: match[2] }
+                        })
+                    }
+                }
+                parts.push({ type: 'text', text: msg.content })
+                return { role: 'user', content: parts }
+            }
+            return msg
+        })
+    }
+
+    private buildGeminiContents(
+        messages: Array<{ role: string; content: string }>,
+        images?: string[]
+    ): Array<{ role: string; parts: any[] }> {
+        return messages
+            .filter(m => m.role !== 'system')
+            .map((msg, i, arr) => {
+                const isLast = i === arr.length - 1
+                const parts: any[] = []
+
+                if (msg.role === 'user' && isLast && images && images.length > 0) {
+                    for (const img of images) {
+                        const match = img.match(/^data:([^;]+);base64,(.+)$/)
+                        if (match) {
+                            parts.push({
+                                inline_data: { mime_type: match[1], data: match[2] }
+                            })
+                        }
+                    }
+                }
+                parts.push({ text: msg.content })
+
+                return {
+                    role: msg.role === 'assistant' ? 'model' : 'user',
+                    parts
+                }
+            })
     }
 
     private async streamHttpsRequest(params: {

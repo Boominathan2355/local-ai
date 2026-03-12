@@ -9,6 +9,7 @@ import { StorageService } from '../services/storage.service'
 import { DownloadService } from '../services/download.service'
 import { SearchService } from '../services/search.service'
 import { CloudModelService } from '../services/cloud-model.service'
+import { SetupManager } from '../services/setup.manager'
 
 import type { ChatMessage } from '../../src/types/chat.types'
 import type { Conversation } from '../../src/types/conversation.types'
@@ -92,6 +93,7 @@ export function registerIpcHandlers(
     downloadService: DownloadService,
     searchService: SearchService,
     cloudModelService: CloudModelService,
+    setupManager: SetupManager,
     initialModelId: string | null = null
 ): void {
     let activeAbortController: AbortController | null = null
@@ -120,23 +122,54 @@ export function registerIpcHandlers(
     })
 
     // --- Model ---
-    ipcMain.handle(IPC_CHANNELS.MODEL_GET_STATUS, () => ({
-        status: llamaServer.status,
-        modelName: null,
-        error: null,
-        tokensPerSecond: null
-    }))
+    ipcMain.handle(IPC_CHANNELS.MODEL_GET_STATUS, () => {
+        const models = downloadService.getAvailableModels()
+        const activeModel = models.find(m => m.id === activeModelId)
+        return {
+            status: llamaServer.status,
+            modelName: activeModel?.name ?? null,
+            modelTier: activeModel?.tier ?? null,
+            error: null,
+            tokensPerSecond: null,
+            supportsVision: activeModel?.supportsVision ?? false,
+            supportsThinking: activeModel?.supportsThinking ?? false
+        }
+    })
+
+    function getModelMetadata(modelId: string | null) {
+        if (!modelId) return { supportsVision: false, supportsThinking: false }
+        const model = downloadService.getAvailableModels().find(m => m.id === modelId)
+        return {
+            supportsVision: model?.supportsVision ?? false,
+            supportsThinking: model?.supportsThinking ?? false
+        }
+    }
 
     ipcMain.handle(IPC_CHANNELS.MODEL_START, async () => {
         const modelPath = downloadService.getFirstAvailableModelPath()
-        if (!modelPath) return { error: 'No model found.' }
-        llamaServer.updateConfig({ binaryPath: downloadService.getBinaryPath(), modelPath })
+        if (!modelPath) return { error: 'No model found' }
+
         const downloaded = downloadService.getDownloadedModels()
         const match = downloaded.find((m) => modelPath.includes(m.filename))
         activeModelId = match?.id ?? null
+
+        const metadata = getModelMetadata(activeModelId)
+        const mmprojPath = activeModelId ? downloadService.getMmprojPath(activeModelId) : null
+
+        llamaServer.updateConfig({
+            binaryPath: setupManager.getBinaryPath(),
+            modelPath,
+            mmprojPath: mmprojPath ?? undefined,
+            ...metadata
+        })
         try {
             await llamaServer.start()
-            return { success: true, activeModelId, activeModelName: match?.name ?? null }
+            return {
+                success: true,
+                activeModelId,
+                activeModelName: match?.name ?? null,
+                ...metadata
+            }
         } catch (err) {
             return { error: err instanceof Error ? err.message : 'Failed to start' }
         }
@@ -155,7 +188,9 @@ export function registerIpcHandlers(
         return {
             activeModelId,
             activeModelName: activeModel?.name ?? null,
-            activeModelTier: activeModel?.tier ?? null
+            activeModelTier: activeModel?.tier ?? null,
+            supportsVision: activeModel?.supportsVision ?? false,
+            supportsThinking: activeModel?.supportsThinking ?? false
         }
     })
 
@@ -164,14 +199,31 @@ export function registerIpcHandlers(
         if (llamaServer.status === 'generating') return { error: 'Stop generation first' }
         await llamaServer.stop()
         const model = downloadService.getAvailableModels().find(m => m.id === modelId)
-        if (!model || !downloadService.isModelDownloaded(modelId)) return { error: 'Model not ready' }
+        if (!model) return { error: 'Model not found' }
+        if (!downloadService.isModelDownloaded(modelId)) return { error: 'Model not ready' }
         const modelPath = downloadService.getModelPath(modelId)
         if (!modelPath) return { error: 'Path not found' }
-        llamaServer.updateConfig({ binaryPath: downloadService.getBinaryPath(), modelPath })
+        const mmprojPath = downloadService.getMmprojPath(modelId)
+
+        const metadata = getModelMetadata(modelId)
+
+        llamaServer.updateConfig({
+            binaryPath: setupManager.getBinaryPath(),
+            modelPath,
+            mmprojPath: mmprojPath ?? undefined,
+            ...metadata
+        })
         activeModelId = modelId
         try {
             await llamaServer.start()
-            return { success: true, activeModelId, activeModelName: model.name, activeModelTier: model.tier }
+            return {
+                success: true,
+                activeModelId,
+                activeModelName: model.name,
+                activeModelTier: model.tier,
+                supportsVision: model.supportsVision ?? false,
+                supportsThinking: model.supportsThinking ?? false
+            }
         } catch (err) {
             return { error: err instanceof Error ? err.message : 'Failed to switch' }
         }
@@ -195,7 +247,7 @@ export function registerIpcHandlers(
     })
 
     // --- Chat ---
-    ipcMain.handle(IPC_CHANNELS.CHAT_SEND_MESSAGE, async (event, conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean, retryId?: string) => {
+    ipcMain.handle(IPC_CHANNELS.CHAT_SEND_MESSAGE, async (event, conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean, retryId?: string, quotedMessageId?: string, quotedMessageText?: string) => {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) return { error: 'No window' }
 
@@ -240,7 +292,10 @@ export function registerIpcHandlers(
                 role: 'user',
                 content,
                 tokenCount: estimateTokens(content),
-                createdAt: Date.now()
+                createdAt: Date.now(),
+                images: images && images.length > 0 ? images : undefined,
+                quotedMessageId,
+                quotedMessageText
             }
             storage.addMessage(userMessage)
             window.webContents.send(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, { conversationId, message: userMessage })
@@ -256,7 +311,16 @@ export function registerIpcHandlers(
             const settings = storage.getSettings()
 
             const context = storage.getRollingContext(conversationId, settings.contextSize)
-            let messages = [{ role: 'system', content: systemPrompt }, ...context.map(m => ({ role: m.role, content: m.content }))]
+            let messages = [{ role: 'system', content: systemPrompt }, ...context.map(m => {
+                if (m.id === userMessageId && m.quotedMessageId) {
+                    const quotedMsg = storage.getMessages(conversationId).find(q => q.id === m.quotedMessageId)
+                    if (quotedMsg) {
+                        const quotedContent = m.quotedMessageText || quotedMsg.content
+                        return { role: m.role, content: `> [Replying to ${quotedMsg.role}]:\n> ${quotedContent}\n\n${m.content}` }
+                    }
+                }
+                return { role: m.role, content: m.content }
+            })]
 
             if (searchEnabled && (settings.serperApiKey || settings.tavilyApiKey)) {
                 try {
@@ -293,6 +357,7 @@ export function registerIpcHandlers(
                     apiKey: '',
                     model: selectedModel.id,
                     messages,
+                    images: images && images.length > 0 ? images : undefined,
                     temperature: settings.temperature,
                     maxTokens: settings.maxTokens,
                     stream: true
@@ -321,7 +386,42 @@ export function registerIpcHandlers(
                     }, activeAbortController.signal)
                 }
             } else {
-                assistantContent = await streamCompletion(llamaServer.baseUrl, messages, activeAbortController.signal, (token) => {
+                // For local llama-server: build multimodal messages if images are present
+                let localMessages: Array<{ role: string; content: any }> = messages
+                const hasImages = images && images.length > 0
+
+                if (hasImages) {
+                    const visionInstruction = "You are a multimodal AI assistant with visual capabilities. Analyze the provided images carefully to answer user queries accurately. If you see an image, you MUST describe or use it in your response as requested."
+                    localMessages = messages.map((m, i) => {
+                        if (m.role === 'system') {
+                            return { ...m, content: `${visionInstruction}\n${m.content}` }
+                        }
+                        if (m.role === 'user' && i === messages.length - 1) {
+                            const parts: any[] = [{ type: 'text', text: m.content }]
+                            for (const img of images) {
+                                parts.push({ type: 'image_url', image_url: { url: img } })
+                            }
+                            return { role: 'user', content: parts }
+                        }
+                        return m
+                    })
+
+                    // If no system message existed, prepend one
+                    if (!localMessages.some(m => m.role === 'system')) {
+                        localMessages.unshift({ role: 'system', content: visionInstruction })
+                    }
+                }
+
+                console.log(`[Chat] Sending payload to llama-server. HasImages: ${hasImages}, MmprojPath: ${downloadService.getMmprojPath(activeModelId ?? '')}`)
+                if (hasImages) {
+                    const mmprojPath = activeModelId ? downloadService.getMmprojPath(activeModelId) : null
+                    if (!mmprojPath) {
+                        return { error: 'Active model does not support vision or vision projector is missing' }
+                    }
+                    console.log(`[Chat] Last message payload: ${JSON.stringify(localMessages[localMessages.length - 1], null, 2).substring(0, 500)}...`)
+                }
+
+                assistantContent = await streamCompletion(llamaServer.baseUrl, localMessages, activeAbortController.signal, (token) => {
                     assistantContent += token
                     window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token, done: false })
                 }, ["<|user|>", "user:", "<|assistant|>", "assistant:"], settings.temperature, settings.maxTokens)
@@ -382,12 +482,40 @@ export function registerIpcHandlers(
     })
 
     // --- Setup & Download ---
-    ipcMain.handle(IPC_CHANNELS.SETUP_GET_STATUS, () => ({
-        hasBinary: downloadService.isBinaryDownloaded(),
-        hasModel: downloadService.getFirstAvailableModelPath() !== null,
-        binaryPath: downloadService.getBinaryPath(),
-        modelPath: downloadService.getFirstAvailableModelPath()
-    }))
+    ipcMain.handle(IPC_CHANNELS.SETUP_GET_STATUS, () => setupManager.getStatus())
+
+    ipcMain.handle(IPC_CHANNELS.SETUP_CHECK_UPDATES, () => setupManager.checkForUpdates())
+
+    ipcMain.handle(IPC_CHANNELS.SETUP_INSTALL_ENGINE, async (event) => {
+        const win = BrowserWindow.fromWebContents(event.sender)
+        const prog = (p: any) => win?.webContents.send(IPC_CHANNELS.SETUP_PROGRESS, p)
+        setupManager.on('progress', prog)
+        try {
+            const p = await setupManager.installEngine()
+            win?.webContents.send(IPC_CHANNELS.SETUP_COMPLETE, { id: 'engine', path: p })
+            return { success: true, path: p }
+        } catch (err) {
+            return { error: err instanceof Error ? err.message : 'Error' }
+        } finally {
+            setupManager.removeListener('progress', prog)
+        }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.SETUP_UPDATE_ENGINE, async (event) => {
+        const win = BrowserWindow.fromWebContents(event.sender)
+        const prog = (p: any) => win?.webContents.send(IPC_CHANNELS.SETUP_PROGRESS, p)
+        setupManager.on('progress', prog)
+        try {
+            const p = await setupManager.updateEngine()
+            win?.webContents.send(IPC_CHANNELS.SETUP_COMPLETE, { id: 'engine', path: p })
+            return { success: true, path: p }
+        } catch (err) {
+            return { error: err instanceof Error ? err.message : 'Error' }
+        } finally {
+            setupManager.removeListener('progress', prog)
+        }
+    })
+
     ipcMain.handle(IPC_CHANNELS.DOWNLOAD_GET_DOWNLOADED, () => downloadService.getDownloadedModels())
     ipcMain.handle(IPC_CHANNELS.DOWNLOAD_START_MODEL, async (event, modelId: string) => {
         const win = BrowserWindow.fromWebContents(event.sender)
@@ -403,29 +531,19 @@ export function registerIpcHandlers(
             downloadService.removeListener('progress', prog)
         }
     })
-    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_START_BINARY, async (event) => {
-        const win = BrowserWindow.fromWebContents(event.sender)
-        const prog = (p: any) => win?.webContents.send(IPC_CHANNELS.DOWNLOAD_PROGRESS, p)
-        downloadService.on('progress', prog)
-        try {
-            const p = await downloadService.downloadBinary()
-            win?.webContents.send(IPC_CHANNELS.DOWNLOAD_COMPLETE, { id: 'binary', path: p })
-            return { success: true, path: p }
-        } catch (err) {
-            return { error: err instanceof Error ? err.message : 'Error' }
-        } finally {
-            downloadService.removeListener('progress', prog)
-        }
-    })
     ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CANCEL, (_event, id) => {
-        downloadService.cancelDownload(id)
+        if (id === 'engine' || id === 'binary') {
+            setupManager.cancelDownload(id)
+        } else {
+            downloadService.cancelDownload(id)
+        }
         return { success: true }
     })
 }
 
 function streamCompletion(
     baseUrl: string,
-    messages: Array<{ role: string; content: string }>,
+    messages: Array<{ role: string; content: any }>,
     signal: AbortSignal,
     onToken: (token: string) => void,
     stop: string[] = [],

@@ -9,7 +9,7 @@ import type { ModelStatus } from '../../src/types/model.types'
 
 export interface LocalAIApi {
     chat: {
-        sendMessage: (conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean, retryId?: string) => Promise<{ success?: boolean; error?: string }>
+        sendMessage: (conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean, retryId?: string, quotedMessageId?: string, quotedMessageText?: string) => Promise<{ success?: boolean; error?: string }>
         stopGeneration: () => Promise<{ success: boolean }>
         onStreamToken: (callback: (event: StreamTokenEvent) => void) => () => void
         onStreamComplete: (callback: (data: { conversationId: string }) => void) => () => void
@@ -57,14 +57,20 @@ export interface LocalAIApi {
         getModels: (options?: { includeCloud?: boolean }) => Promise<Array<{ id: string; name: string; description: string; sizeGB: number; ramRequired: number; tier: string; filename: string; downloaded: boolean }>>
         getDownloaded: () => Promise<Array<{ id: string; name: string; filename: string; sizeBytes: number; path: string }>>
         startModel: (modelId: string) => Promise<{ success?: boolean; error?: string; path?: string }>
-        startBinary: () => Promise<{ success?: boolean; error?: string; path?: string }>
+
         cancel: (downloadId: string) => Promise<{ success: boolean }>
         onProgress: (callback: (progress: { id: string; filename: string; downloaded: number; total: number; percent: number; speedMBps: number; etaSeconds: number }) => void) => () => void
         onComplete: (callback: (data: { id: string; path: string }) => void) => () => void
         onError: (callback: (data: { id: string; error: string }) => void) => () => void
     }
     setup: {
-        getStatus: () => Promise<{ hasBinary: boolean; hasModel: boolean; binaryPath: string; modelPath: string | null }>
+        getStatus: () => Promise<{ hasBinary: boolean; hasModel: boolean; binaryPath: string; modelPath: string | null; llamaDir: string; updateAvailable?: boolean }>
+        checkUpdates: () => Promise<{ updateAvailable: boolean; latestVersion?: string; downloadUrl?: string }>
+        installEngine: () => Promise<{ success?: boolean; error?: string; path?: string }>
+        updateEngine: () => Promise<{ success?: boolean; error?: string; path?: string }>
+        onProgress: (callback: (progress: { id: string; filename: string; downloaded: number; total: number; percent: number; speedMBps: number; etaSeconds: number }) => void) => () => void
+        onComplete: (callback: (data: { id: string; path: string }) => void) => () => void
+        onError: (callback: (data: { id: string; error: string }) => void) => () => void
     }
     onSettingsChanged: (callback: (settings: AppSettings) => void) => () => void
 }
@@ -82,8 +88,8 @@ function createListener<T>(channel: string, callback: (data: T) => void): () => 
 
 const api: LocalAIApi = {
     chat: {
-        sendMessage: (conversationId, content, systemPrompt, images, searchEnabled, retryId) =>
-            ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND_MESSAGE, conversationId, content, systemPrompt, images, searchEnabled, retryId),
+        sendMessage: (conversationId, content, systemPrompt, images, searchEnabled, retryId, quotedMessageId, quotedMessageText) =>
+            ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND_MESSAGE, conversationId, content, systemPrompt, images, searchEnabled, retryId, quotedMessageId, quotedMessageText),
         stopGeneration: () =>
             ipcRenderer.invoke(IPC_CHANNELS.CHAT_STOP_GENERATION),
         onStreamToken: (callback) =>
@@ -130,14 +136,20 @@ const api: LocalAIApi = {
         getModels: (options) => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_GET_MODELS, options),
         getDownloaded: () => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_GET_DOWNLOADED),
         startModel: (modelId) => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_START_MODEL, modelId),
-        startBinary: () => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_START_BINARY),
+
         cancel: (downloadId) => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_CANCEL, downloadId),
         onProgress: (callback) => createListener(IPC_CHANNELS.DOWNLOAD_PROGRESS, callback),
         onComplete: (callback) => createListener(IPC_CHANNELS.DOWNLOAD_COMPLETE, callback),
         onError: (callback) => createListener(IPC_CHANNELS.DOWNLOAD_ERROR, callback)
     },
     setup: {
-        getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_GET_STATUS)
+        getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_GET_STATUS),
+        checkUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_CHECK_UPDATES),
+        installEngine: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_INSTALL_ENGINE),
+        updateEngine: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_UPDATE_ENGINE),
+        onProgress: (callback) => createListener(IPC_CHANNELS.SETUP_PROGRESS, callback),
+        onComplete: (callback) => createListener(IPC_CHANNELS.SETUP_COMPLETE, callback),
+        onError: (callback) => createListener(IPC_CHANNELS.SETUP_ERROR, callback)
     },
     onSettingsChanged: (callback) =>
         createListener(IPC_CHANNELS.SETTINGS_CHANGED, callback)

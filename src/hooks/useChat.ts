@@ -3,14 +3,16 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { getLocalAI } from '../helpers/ipc.helper'
 import type { ChatMessage } from '../types/chat.types'
 import { DEFAULT_SYSTEM_PROMPT } from '../types/settings.types'
+import { parseThinkingProcess } from '../utils/ai-parser'
 
 interface UseChatReturn {
     messages: ChatMessage[]
     allMessages: ChatMessage[]
     streamingContent: string
     isStreaming: boolean
+    isThinking: boolean
     error: string | null
-    sendMessage: (content: string, options?: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean }, retryId?: string) => void
+    sendMessage: (content: string, options?: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean; quotedMessageId?: string; quotedMessageText?: string }, retryId?: string) => void
     stopGeneration: () => void
     clearError: () => void
     retryMessage: (messageId: string) => void
@@ -21,10 +23,11 @@ interface UseChatReturn {
 /**
  * Manages chat messages, streaming, and IPC communication for a conversation.
  */
-export function useChat(conversationId: string | null): UseChatReturn {
+export function useChat(conversationId: string | null, supportsThinking: boolean = false): UseChatReturn {
     const [messages, setMessages] = useState<ChatMessage[]>([])
     const [streamingContent, setStreamingContent] = useState('')
     const [isStreaming, setIsStreaming] = useState(false)
+    const [isThinking, setIsThinking] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     const streamingRef = useRef(false)
@@ -34,6 +37,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
     useEffect(() => {
         // Reset streaming state when switching conversations
         setIsStreaming(false)
+        setIsThinking(false)
         setStreamingContent('')
         streamingRef.current = false
         setError(null)
@@ -62,7 +66,17 @@ export function useChat(conversationId: string | null): UseChatReturn {
                     streamingRef.current = true
                     setIsStreaming(true)
                 }
-                setStreamingContent((prev) => prev + event.token)
+                setStreamingContent((prev) => {
+                    const newRawContent = prev + event.token
+
+                    // As content streams, we parse it to determine if we're currently thinking
+                    if (supportsThinking) {
+                        const { isThinking } = parseThinkingProcess(newRawContent)
+                        setIsThinking(isThinking)
+                    }
+
+                    return newRawContent
+                })
             }
         })
 
@@ -70,6 +84,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
             if (data.conversationId === conversationId) {
                 streamingRef.current = false
                 setIsStreaming(false)
+                setIsThinking(false)
                 setStreamingContent('')
 
                 // Reload messages to get the saved assistant message
@@ -83,6 +98,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
             if (data.conversationId === conversationId) {
                 streamingRef.current = false
                 setIsStreaming(false)
+                setIsThinking(false)
                 setStreamingContent('')
                 setError(data.error)
             }
@@ -101,14 +117,26 @@ export function useChat(conversationId: string | null): UseChatReturn {
                         )
                         if (optimisticIndex !== -1) {
                             const newMessages = [...prev]
-                            newMessages[optimisticIndex] = data.message!
+                            newMessages[optimisticIndex] = {
+                                ...data.message!,
+                                ...(supportsThinking ? parseThinkingProcess(data.message!.content) : {})
+                            }
                             return newMessages
                         }
-                        return [...prev, data.message!]
+                        return [...prev, {
+                            ...data.message!,
+                            ...(supportsThinking ? parseThinkingProcess(data.message!.content) : {})
+                        }]
                     })
                 } else {
                     api.conversations.getMessages(conversationId!).then((msgs) => {
-                        setMessages(msgs)
+                        // Parse thinking for historical messages as well 
+                        // Note: Only for assistants.
+                        const parsedMsgs = msgs.map(m => m.role === 'assistant'
+                            ? { ...m, ...(supportsThinking ? parseThinkingProcess(m.content) : {}) }
+                            : m
+                        )
+                        setMessages(parsedMsgs)
                     })
                 }
             }
@@ -123,7 +151,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
     }, [conversationId])
 
     const sendMessage = useCallback(
-        (content: string, options: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean } = {}, retryId?: string) => {
+        (content: string, options: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean; quotedMessageId?: string; quotedMessageText?: string } = {}, retryId?: string) => {
             if (!conversationId || (streamingRef.current && !retryId) || (!content.trim() && !options?.images?.length)) return
 
             const api = getLocalAI()
@@ -132,6 +160,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
             setError(null)
             streamingRef.current = true
             setIsStreaming(true)
+            setIsThinking(false)
             setStreamingContent('')
 
             const optimisticId = retryId || `temp-${Date.now()}`
@@ -142,7 +171,9 @@ export function useChat(conversationId: string | null): UseChatReturn {
                 content: content.trim(),
                 tokenCount: Math.ceil((content.trim().length + (options?.images?.length || 0) * 100) / 4),
                 createdAt: Date.now(),
-                images: options?.images
+                images: options?.images,
+                quotedMessageId: options?.quotedMessageId,
+                quotedMessageText: options?.quotedMessageText
             }
 
             setMessages((prev) => {
@@ -157,18 +188,20 @@ export function useChat(conversationId: string | null): UseChatReturn {
                 return [...prev, optimisticMessage]
             })
 
-            api.chat.sendMessage(conversationId, content.trim(), options?.systemPrompt || DEFAULT_SYSTEM_PROMPT, options?.images, options?.searchEnabled, retryId)
+            api.chat.sendMessage(conversationId, content.trim(), options?.systemPrompt || DEFAULT_SYSTEM_PROMPT, options?.images, options?.searchEnabled, retryId, options?.quotedMessageId, options?.quotedMessageText)
                 .then((result) => {
                     if (result.error) {
                         setError(result.error)
                         streamingRef.current = false
                         setIsStreaming(false)
+                        setIsThinking(false)
                     }
                 })
                 .catch((err) => {
                     setError(err.message || 'Network error')
                     streamingRef.current = false
                     setIsStreaming(false)
+                    setIsThinking(false)
                 })
         },
         [conversationId]
@@ -208,6 +241,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
 
         // Immediately update local state to reflect that streaming has stopped
         setIsStreaming(false)
+        setIsThinking(false)
         streamingRef.current = false
         setStreamingContent('')
     }, [])
@@ -228,6 +262,7 @@ export function useChat(conversationId: string | null): UseChatReturn {
         allMessages: messages, // Export all for version finding
         streamingContent,
         isStreaming,
+        isThinking,
         error,
         sendMessage,
         stopGeneration,

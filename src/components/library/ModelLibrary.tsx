@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Zap, Bot, Library as LibraryIcon, CheckCircle2, AlertTriangle, XCircle, X, Download } from 'lucide-react'
+import { Zap, Bot, Eye, Library as LibraryIcon, CheckCircle2, AlertTriangle, XCircle, X, Download } from 'lucide-react'
 import { getLocalAI } from '../../helpers/ipc.helper'
 import { getCompatibility, getBestFitModelId, getRecommendation } from '../../helpers/recommendation.helper'
 import type { SystemInfo, CompatibilityStatus, ModelInfo } from '../../helpers/recommendation.helper'
@@ -194,6 +194,16 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                         {model.provider && model.provider !== 'local' && (
                             <span className="library__card-badge library__card-badge--cloud">
                                 <Zap size={10} /> {model.provider.toUpperCase()} MODEL
+                            </span>
+                        )}
+                        {model.supportsVision && (
+                            <span className="library__card-badge library__card-badge--vision">
+                                <Eye size={10} /> VISION
+                            </span>
+                        )}
+                        {model.supportsThinking && (
+                            <span className="library__card-badge library__card-badge--thinking" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
+                                <Bot size={10} /> THINKING
                             </span>
                         )}
                         {isRecommended && !model.downloaded && (
@@ -521,6 +531,6 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     )
 }

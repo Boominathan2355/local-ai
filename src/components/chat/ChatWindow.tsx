@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import {
     Cpu,
     Globe,
@@ -8,7 +8,8 @@ import {
     Terminal,
     Bot,
     RotateCcw,
-    Rocket
+    Rocket,
+    ArrowDown
 } from 'lucide-react'
 
 import { MessageBubble } from './MessageBubble'
@@ -16,6 +17,7 @@ import { StreamingIndicator } from './StreamingIndicator'
 import { MessageInput } from './MessageInput'
 import { ModelSwitcher } from './ModelSwitcher'
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { ReasoningBlock } from './ReasoningBlock'
 
 
 import type { ChatMessage } from '../../types/chat.types'
@@ -32,9 +34,10 @@ interface ChatWindowProps {
     messages: ChatMessage[]
     streamingContent: string
     isStreaming: boolean
+    isThinking?: boolean
     error: string | null
     modelReady: boolean
-    onSendMessage: (content: string, images?: string[], searchEnabled?: boolean, retryId?: string) => void
+    onSendMessage: (content: string, images?: string[], searchEnabled?: boolean, retryId?: string, quotedMessageId?: string, quotedMessageText?: string) => void
     onStopGeneration: () => void
     activeModelId: string | null
     modelStatus: string
@@ -47,12 +50,14 @@ interface ChatWindowProps {
     activeModelTier?: string | null
     allMessages?: ChatMessage[]
     onSwitchVersion?: (id: string) => void
+    supportsVision?: boolean
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
     messages,
     streamingContent,
     isStreaming,
+    isThinking = false,
     error,
     modelReady,
     onSendMessage,
@@ -67,17 +72,49 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     activeModelName,
     activeModelTier,
     allMessages,
-    onSwitchVersion
+    onSwitchVersion,
+    supportsVision = false
 }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
+    const [showScrollBtn, setShowScrollBtn] = useState(false)
+    const [quotingMessageId, setQuotingMessageId] = useState<string | null>(null)
+    const [quotingMessageText, setQuotingMessageText] = useState<string | null>(null)
 
     const isAgentMode = activeModelTier === 'agent'
 
-    // Auto-scroll to bottom on new messages or streaming
+    // Auto-scroll to bottom only if user is already at the bottom during streaming
     useEffect(() => {
+        if (!showScrollBtn && streamingContent.length > 0) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+        }
+    }, [streamingContent.length])
+
+    // Always scroll to bottom when a new complete message is added
+    useEffect(() => {
+        if (messages.length > 0) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+        }
+    }, [messages.length])
+
+    // Scroll listener for the "Scroll to Bottom" button
+    useEffect(() => {
+        const container = messagesContainerRef.current
+        if (!container) return
+
+        const handleScroll = () => {
+            const { scrollTop, scrollHeight, clientHeight } = container
+            const isNearBottom = scrollHeight - scrollTop - clientHeight < 150
+            setShowScrollBtn(!isNearBottom)
+        }
+
+        container.addEventListener('scroll', handleScroll)
+        return () => container.removeEventListener('scroll', handleScroll)
+    }, [])
+
+    const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }, [messages, streamingContent])
+    }
 
     const handleHintClick = (prompt: string): void => {
         onSendMessage(prompt)
@@ -87,10 +124,23 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         onSendMessage(newContent, [], false, id)
     }
 
+    const handleSendMessageWithQuote = (content: string, images?: string[], searchEnabled?: boolean, retryId?: string) => {
+        onSendMessage(content, images, searchEnabled, retryId, quotingMessageId ?? undefined, quotingMessageText ?? undefined)
+        setQuotingMessageId(null)
+        setQuotingMessageText(null)
+    }
+
+    const handleReply = (id: string, selectedText?: string) => {
+        setQuotingMessageId(id)
+        setQuotingMessageText(selectedText || null)
+    }
+
+    const quotingMessage = quotingMessageId ? messages.find(m => m.id === quotingMessageId) || allMessages?.find(m => m.id === quotingMessageId) : null
+
     const hasMessages = messages.length > 0 || isStreaming
 
     return (
-        <main className="chat" id="chat-window">
+        <main className={`chat ${isAgentMode ? 'chat--agent' : ''}`} id="chat-window">
             <div className={`chat__header ${isAgentMode ? 'chat__header--agent' : ''}`}>
                 <div className="chat__header-left">
                     <ModelSwitcher
@@ -147,7 +197,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                 </div>
             ) : (
                 <div className="chat__messages" ref={messagesContainerRef} id="messages-area">
-                    <div className="chat__messages-inner">
+                    <div className={`chat__messages-inner ${isAgentMode ? 'chat__messages-inner--agent' : ''}`}>
                         {messages.map((message, index) => (
                             <MessageBubble
                                 key={message.id}
@@ -156,12 +206,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                                 onSwitchVersion={onSwitchVersion}
                                 onRetry={onRetryMessage}
                                 onEdit={handleEdit}
+                                onReply={handleReply}
                                 isLast={index === messages.length - 1}
                             />
                         ))}
 
                         {/* Streaming assistant message */}
-                        {isStreaming && streamingContent && (
+                        {isStreaming && (streamingContent || isThinking) && (
                             <div className="message message--assistant message--streaming" id="streaming-message">
                                 <div className="message__wrapper">
                                     <div className="message__avatar message__avatar--assistant">
@@ -169,7 +220,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                                     </div>
                                     <div className="message__flat">
                                         <div className="message__content message__content--markdown">
-                                            <MarkdownRenderer content={streamingContent} />
+                                            {isThinking ? (
+                                                <ReasoningBlock reasoningContent={streamingContent.replace(/<think>|<\/think>/g, '')} isThinking={true} />
+                                            ) : (
+                                                <MarkdownRenderer content={streamingContent} />
+                                            )}
                                         </div>
                                         <StreamingIndicator />
                                     </div>
@@ -178,7 +233,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                         )}
 
                         {/* Streaming but no content yet */}
-                        {isStreaming && !streamingContent && (
+                        {isStreaming && !streamingContent && !isThinking && (
                             <div className="message message--assistant message--streaming" id="thinking-message">
                                 <div className="message__wrapper">
                                     <div className="message__avatar message__avatar--assistant">
@@ -210,16 +265,31 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
                         <div ref={messagesEndRef} />
                     </div>
+
+                    <button
+                        className={`chat__scroll-btn ${showScrollBtn ? '' : 'chat__scroll-btn--hidden'}`}
+                        onClick={scrollToBottom}
+                        title="Scroll to bottom"
+                    >
+                        <ArrowDown size={20} />
+                    </button>
                 </div>
             )}
 
             <MessageInput
-                onSend={onSendMessage}
+                onSend={handleSendMessageWithQuote}
                 onStop={onStopGeneration}
                 isStreaming={isStreaming}
                 disabled={!modelReady}
+                isAgentMode={isAgentMode}
+                supportsVision={supportsVision}
+                quotedMessage={quotingMessage}
+                quotedText={quotingMessageText}
+                onCancelQuote={() => {
+                    setQuotingMessageId(null)
+                    setQuotingMessageText(null)
+                }}
             />
         </main>
     )
 }
-

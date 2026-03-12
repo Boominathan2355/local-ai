@@ -1,17 +1,29 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { Paperclip, Globe, Send, Square, X } from 'lucide-react'
+import type { ChatMessage } from '../../types/chat.types'
 
 interface MessageInputProps {
     onSend: (content: string, images?: string[], searchEnabled?: boolean) => void
     onStop: () => void
     isStreaming: boolean
     disabled: boolean
+    isAgentMode?: boolean
+    supportsVision?: boolean
+    quotedMessage?: ChatMessage | null
+    quotedText?: string | null
+    onCancelQuote?: () => void
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
     onSend,
     onStop,
     isStreaming,
-    disabled
+    disabled,
+    isAgentMode,
+    supportsVision = false,
+    quotedMessage,
+    quotedText,
+    onCancelQuote
 }) => {
     const [value, setValue] = useState('')
     const [images, setImages] = useState<string[]>([])
@@ -59,6 +71,8 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         const trimmed = value.trim()
         if ((!trimmed && images.length === 0) || disabled) return
 
+        if (images.length > 0 && !supportsVision) return
+
         onSend(trimmed, images.length > 0 ? images : undefined, isSearchEnabled)
         setValue('')
         setImages([])
@@ -87,7 +101,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
     return (
         <div className="chat__input-area">
-            <div className="chat__input-container">
+            <div className={`chat__input-container ${isAgentMode ? 'chat__input-container--agent' : ''}`}>
                 {/* Image Previews */}
                 {images.length > 0 && (
                     <div className="chat__input-previews">
@@ -97,6 +111,18 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                                 <button className="chat__input-preview-remove" onClick={() => removeImage(i)}>✕</button>
                             </div>
                         ))}
+                    </div>
+                )}
+
+                {quotedMessage && (
+                    <div className="chat__input-quote">
+                        <div className="chat__input-quote-content">
+                            <span className="chat__input-quote-author">Replying to {quotedMessage.role === 'user' ? 'You' : 'Assistant'}</span>
+                            <span className="chat__input-quote-text">{quotedText || quotedMessage.content}</span>
+                        </div>
+                        <button className="chat__input-quote-cancel" onClick={onCancelQuote}>
+                            <X size={14} />
+                        </button>
                     </div>
                 )}
 
@@ -116,13 +142,20 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
                 <div className="chat__input-tools">
                     <div className="chat__input-tools-left">
-                        <button className="chat__tool-icon" onClick={() => fileInputRef.current?.click()}>📎</button>
+                        <button
+                            className={`chat__tool-icon ${!supportsVision ? 'chat__tool-icon--disabled' : ''}`}
+                            onClick={() => supportsVision ? fileInputRef.current?.click() : null}
+                            title={supportsVision ? "Attach files" : "This model does not support images"}
+                            disabled={!supportsVision}
+                        >
+                            <Paperclip size={18} />
+                        </button>
                         <div className="chat__tool-divider"></div>
                         <button
                             className={`chat__web-search ${isSearchEnabled ? 'chat__web-search--active' : ''}`}
                             onClick={() => setIsSearchEnabled(!isSearchEnabled)}
                         >
-                            <span className="chat__web-search-icon">🌐</span>
+                            <Globe size={14} className="chat__web-search-icon" />
                             <span>Web Search</span>
                         </button>
                     </div>
@@ -133,11 +166,18 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                             onClick={handleSubmit}
                             disabled={!isStreaming && (!value.trim() && images.length === 0 || disabled)}
                             id="send-btn"
+                            title={isStreaming ? 'Stop generation' : 'Send message'}
                         >
-                            {isStreaming ? '■' : '↑'}
+                            {isStreaming ? <Square size={16} fill="currentColor" /> : <Send size={18} />}
                         </button>
                     </div>
                 </div>
+
+                {!supportsVision && images.length > 0 && (
+                    <div className="chat__input-warning">
+                        This model does not support images. Please remove them to continue.
+                    </div>
+                )}
 
                 <input
                     type="file"

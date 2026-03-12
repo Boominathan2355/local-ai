@@ -37,6 +37,7 @@ interface DownloadProgress {
 interface SetupStatus {
     hasBinary: boolean
     hasModel: boolean
+    llamaDir?: string
 }
 
 type SetupStep = 'binary' | 'model' | 'done'
@@ -136,7 +137,33 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             setError(data.error)
         })
 
-        cleanupRef.current = [cleanupProgress, cleanupComplete, cleanupError]
+        const cleanupSetupProgress = api.setup.onProgress((p) => {
+            setProgress(p)
+        })
+
+        const cleanupSetupComplete = api.setup.onComplete(() => {
+            setIsDownloading(false)
+            setProgress(null)
+            api.setup.getStatus().then((s) => {
+                setStatus(s)
+                if (s.hasBinary && s.hasModel) {
+                    setCurrentStep('done')
+                } else if (s.hasBinary) {
+                    setCurrentStep('model')
+                }
+            })
+        })
+
+        const cleanupSetupError = api.setup.onError((data) => {
+            setIsDownloading(false)
+            setProgress(null)
+            setError(data.error)
+        })
+
+        cleanupRef.current = [
+            cleanupProgress, cleanupComplete, cleanupError,
+            cleanupSetupProgress, cleanupSetupComplete, cleanupSetupError
+        ]
 
         return () => {
             cleanupRef.current.forEach((fn) => fn())
@@ -149,7 +176,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
 
         setError(null)
         setIsDownloading(true)
-        api.download.startBinary()
+        api.setup.installEngine()
     }
 
     const handleDownloadModel = (): void => {
@@ -239,6 +266,11 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                             >
                                 <Download size={16} /> Download Inference Engine
                             </button>
+                            {status.llamaDir && (
+                                <p className="setup__path-info" style={{ marginTop: 'var(--space-md)', fontSize: '0.8rem', opacity: 0.7, color: 'var(--text-secondary)', textAlign: 'center' }}>
+                                    Installing to: <code style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 4px', borderRadius: '4px' }}>{status.llamaDir}</code>
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}

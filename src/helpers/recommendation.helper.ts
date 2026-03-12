@@ -8,6 +8,8 @@ export interface ModelInfo {
     filename: string
     downloaded: boolean
     provider?: 'local' | 'openai' | 'anthropic' | 'google'
+    supportsVision?: boolean
+    supportsThinking?: boolean
 }
 
 export interface SystemInfo {
