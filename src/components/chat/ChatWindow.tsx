@@ -9,7 +9,11 @@ import {
     Bot,
     RotateCcw,
     Rocket,
-    ArrowDown
+    ArrowDown,
+    ShieldCheck,
+    XCircle,
+    Check,
+    Reply
 } from 'lucide-react'
 
 import { MessageBubble } from './MessageBubble'
@@ -18,8 +22,7 @@ import { MessageInput } from './MessageInput'
 import { ModelSwitcher } from './ModelSwitcher'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { ReasoningBlock } from './ReasoningBlock'
-
-
+import { parseThinkingProcess } from '../../utils/ai-parser'
 import type { ChatMessage } from '../../types/chat.types'
 import type { AppSettings } from '../../types/settings.types'
 
@@ -42,6 +45,7 @@ interface ChatWindowProps {
     activeModelId: string | null
     modelStatus: string
     onSwitchModel: (modelId: string, modelName?: string) => void
+    searchStatus?: string | null
     settings: AppSettings
     onUpdateSettings: (changes: Partial<AppSettings>) => void
     onRetryMessage: (id: string) => void
@@ -51,6 +55,9 @@ interface ChatWindowProps {
     allMessages?: ChatMessage[]
     onSwitchVersion?: (id: string) => void
     supportsVision?: boolean
+    pendingToolRequest: { requestId: string; toolName: string; args: any } | null
+    onApproveTool: (requestId: string) => void
+    onDenyTool: (requestId: string) => void
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -65,6 +72,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     activeModelId,
     modelStatus,
     onSwitchModel,
+    searchStatus,
     settings,
     onUpdateSettings,
     onRetryMessage,
@@ -73,13 +81,17 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     activeModelTier,
     allMessages,
     onSwitchVersion,
-    supportsVision = false
+    supportsVision = false,
+    pendingToolRequest,
+    onApproveTool,
+    onDenyTool
 }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
     const [showScrollBtn, setShowScrollBtn] = useState(false)
     const [quotingMessageId, setQuotingMessageId] = useState<string | null>(null)
     const [quotingMessageText, setQuotingMessageText] = useState<string | null>(null)
+    const [floatingReply, setFloatingReply] = useState<{ x: number, y: number, text: string, messageId: string } | null>(null)
 
     const isAgentMode = activeModelTier === 'agent'
 
@@ -111,6 +123,66 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         container.addEventListener('scroll', handleScroll)
         return () => container.removeEventListener('scroll', handleScroll)
     }, [])
+
+    // Global selection tracking for floating reply
+    useEffect(() => {
+        const handleSelection = () => {
+            const selection = window.getSelection()
+            if (!selection || selection.isCollapsed) {
+                setFloatingReply(null)
+                return
+            }
+
+            try {
+                const range = selection.getRangeAt(0)
+                const text = selection.toString().trim()
+                if (!text) {
+                    setFloatingReply(null)
+                    return
+                }
+
+                // Find message ID from parent div
+                let node: Node | null = range.commonAncestorContainer
+                let messageId: string | null = null
+                while (node && node !== document.body) {
+                    if (node instanceof HTMLElement && node.id?.startsWith('message-')) {
+                        messageId = node.id.replace('message-', '')
+                        break
+                    }
+                    node = node.parentElement
+                }
+
+                if (messageId) {
+                    const boundingBox = range.getBoundingClientRect()
+                    setFloatingReply({
+                        x: boundingBox.left + boundingBox.width / 2,
+                        y: boundingBox.top - 8,
+                        text,
+                        messageId
+                    })
+                } else {
+                    setFloatingReply(null)
+                }
+            } catch (e) {
+                setFloatingReply(null)
+            }
+        }
+
+        document.addEventListener('mouseup', handleSelection)
+        document.addEventListener('keyup', handleSelection)
+        return () => {
+            document.removeEventListener('mouseup', handleSelection)
+            document.removeEventListener('keyup', handleSelection)
+        }
+    }, [])
+
+    const handleFloatingReplyClick = () => {
+        if (floatingReply) {
+            handleReply(floatingReply.messageId, floatingReply.text)
+            setFloatingReply(null)
+            window.getSelection()?.removeAllRanges()
+        }
+    }
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -220,11 +292,22 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                                     </div>
                                     <div className="message__flat">
                                         <div className="message__content message__content--markdown">
-                                            {isThinking ? (
-                                                <ReasoningBlock reasoningContent={streamingContent.replace(/<think>|<\/think>/g, '')} isThinking={true} />
-                                            ) : (
-                                                <MarkdownRenderer content={streamingContent} />
-                                            )}
+                                            {(() => {
+                                                const parsed = parseThinkingProcess(streamingContent);
+                                                return (
+                                                    <>
+                                                        {(parsed.reasoningContent || parsed.isThinking || isThinking) && (
+                                                            <ReasoningBlock
+                                                                reasoningContent={parsed.reasoningContent || (isThinking ? streamingContent.replace(/<think>|<\/think>/g, '') : '')}
+                                                                isThinking={parsed.isThinking || isThinking}
+                                                            />
+                                                        )}
+                                                        {parsed.content && (
+                                                            <MarkdownRenderer content={parsed.content} />
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
                                         </div>
                                         <StreamingIndicator />
                                     </div>
@@ -246,6 +329,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                             </div>
                         )}
 
+                        {/* Search status indicator */}
+                        {searchStatus && (
+                            <div className="chat__search-status" id="search-status">
+                                <span className="chat__search-status-dot"></span>
+                                <span className="chat__search-status-text">{searchStatus}</span>
+                            </div>
+                        )}
+
                         {/* Error display */}
                         {error && error !== 'aborted' && (
                             <div className="chat__error-container" id="error-message">
@@ -261,6 +352,51 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                                 </div>
                             </div>
                         )}
+
+
+                        {/* Tool Permission Request */}
+                        {pendingToolRequest && (() => {
+                            const riskLevel =
+                                ['read_file', 'list_directory'].includes(pendingToolRequest.toolName) ? 'safe' :
+                                    ['write_file'].includes(pendingToolRequest.toolName) ? 'caution' : 'danger';
+
+                            return (
+                                <div className={`tool-permission tool-permission--${riskLevel}`} id="tool-permission-bubble">
+                                    <div className="tool-permission__header">
+                                        <div className="tool-permission__icon">
+                                            <ShieldCheck size={18} />
+                                        </div>
+                                        <span className="tool-permission__title">Tool Permission Requested</span>
+                                    </div>
+                                    <div className="tool-permission__desc">
+                                        The agent wants to use the <strong>{pendingToolRequest.toolName}</strong> tool with the following arguments:
+                                    </div>
+                                    <pre className="tool-permission__content">
+                                        {pendingToolRequest.toolName === 'run_command' ? (
+                                            <code className="text-danger">$ {pendingToolRequest.args.command}</code>
+                                        ) : (
+                                            JSON.stringify(pendingToolRequest.args, null, 2)
+                                        )}
+                                    </pre>
+                                    <div className="tool-permission__actions">
+                                        <button
+                                            className="tool-permission__btn tool-permission__btn--deny"
+                                            onClick={() => onDenyTool(pendingToolRequest.requestId)}
+                                        >
+                                            <XCircle size={16} />
+                                            Deny
+                                        </button>
+                                        <button
+                                            className="tool-permission__btn tool-permission__btn--approve"
+                                            onClick={() => onApproveTool(pendingToolRequest.requestId)}
+                                        >
+                                            <Check size={16} />
+                                            Approve & Execute
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
 
                         <div ref={messagesEndRef} />
@@ -290,6 +426,23 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                     setQuotingMessageText(null)
                 }}
             />
+
+            {floatingReply && (
+                <button
+                    className="message__floating-reply"
+                    style={{
+                        position: 'fixed',
+                        left: `${floatingReply.x}px`,
+                        top: `${floatingReply.y}px`,
+                        transform: 'translate(-50%, -100%)',
+                        zIndex: 9999
+                    }}
+                    onClick={handleFloatingReplyClick}
+                >
+                    <Reply size={14} />
+                    <span>Reply</span>
+                </button>
+            )}
         </main>
     )
 }

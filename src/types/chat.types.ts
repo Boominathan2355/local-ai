@@ -16,6 +16,7 @@ export interface ChatMessage {
     quotedMessageId?: string // Link to the message being replied to
     quotedMessageText?: string // Specific selected text that was quoted
     reasoningContent?: string // Content within <think> tags
+    isThinking?: boolean // Whether the message is currently in the thinking phase
     siblingIds?: string[]
     version?: number
     isActive?: boolean

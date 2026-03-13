@@ -15,6 +15,7 @@ interface ConversationSidebarProps {
     onOpenSettings: () => void
     onOpenLibrary: () => void
     onOpenUser: () => void
+    onOpenMCP: () => void
     settings: AppSettings
 }
 
@@ -28,6 +29,7 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
     onOpenSettings,
     onOpenLibrary,
     onOpenUser,
+    onOpenMCP,
     settings
 }) => {
     return (
@@ -85,6 +87,14 @@ export const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                 >
                     <Library size={16} style={{ color: 'var(--text-tertiary)' }} />
                     <span>Model Library</span>
+                </button>
+                <button
+                    className="sidebar__footer-btn"
+                    onClick={onOpenMCP}
+                    id="mcp-btn"
+                >
+                    <Bot size={16} style={{ color: 'var(--text-tertiary)' }} />
+                    <span>Tool Center</span>
                 </button>
                 <button
                     className="sidebar__footer-btn"

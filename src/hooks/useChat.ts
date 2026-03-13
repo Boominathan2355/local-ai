@@ -5,6 +5,15 @@ import type { ChatMessage } from '../types/chat.types'
 import { DEFAULT_SYSTEM_PROMPT } from '../types/settings.types'
 import { parseThinkingProcess } from '../utils/ai-parser'
 
+const parseMessages = (msgs: ChatMessage[], supportsThinking: boolean): ChatMessage[] => {
+    return msgs.map(m => {
+        if (m.role === 'assistant' && (supportsThinking || m.content?.includes('<think>') || m.content?.toUpperCase().includes('[THOUGHT]'))) {
+            return { ...m, ...parseThinkingProcess(m.content) }
+        }
+        return m
+    })
+}
+
 interface UseChatReturn {
     messages: ChatMessage[]
     allMessages: ChatMessage[]
@@ -12,12 +21,16 @@ interface UseChatReturn {
     isStreaming: boolean
     isThinking: boolean
     error: string | null
+    searchStatus: string | null
     sendMessage: (content: string, options?: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean; quotedMessageId?: string; quotedMessageText?: string }, retryId?: string) => void
     stopGeneration: () => void
     clearError: () => void
     retryMessage: (messageId: string) => void
     resendLastMessage: () => void
     switchVersion: (messageId: string) => Promise<void>
+    approveTool: (requestId: string) => void
+    denyTool: (requestId: string) => void
+    pendingToolRequest: { requestId: string; toolName: string; args: any } | null
 }
 
 /**
@@ -29,6 +42,8 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
     const [isStreaming, setIsStreaming] = useState(false)
     const [isThinking, setIsThinking] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [searchStatus, setSearchStatus] = useState<string | null>(null)
+    const [pendingToolRequest, setPendingToolRequest] = useState<{ requestId: string; toolName: string; args: any } | null>(null)
 
     const streamingRef = useRef(false)
     const cleanupRef = useRef<Array<() => void>>([])
@@ -41,6 +56,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
         setStreamingContent('')
         streamingRef.current = false
         setError(null)
+        setSearchStatus(null)
 
         if (!conversationId) {
             setMessages([])
@@ -51,9 +67,9 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
         if (!api) return
 
         api.conversations.getMessages(conversationId).then((msgs) => {
-            setMessages(msgs)
+            setMessages(parseMessages(msgs, supportsThinking))
         })
-    }, [conversationId])
+    }, [conversationId, supportsThinking])
 
     // Set up stream listeners
     useEffect(() => {
@@ -70,7 +86,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
                     const newRawContent = prev + event.token
 
                     // As content streams, we parse it to determine if we're currently thinking
-                    if (supportsThinking) {
+                    if (supportsThinking || newRawContent.includes('<think>') || newRawContent.toUpperCase().includes('[THOUGHT]')) {
                         const { isThinking } = parseThinkingProcess(newRawContent)
                         setIsThinking(isThinking)
                     }
@@ -89,7 +105,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
 
                 // Reload messages to get the saved assistant message
                 api.conversations.getMessages(conversationId!).then((msgs) => {
-                    setMessages(msgs)
+                    setMessages(parseMessages(msgs, supportsThinking))
                 })
             }
         })
@@ -104,51 +120,63 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
             }
         })
 
+        const cleanupSearchStatus = api.chat.onSearchStatus ? api.chat.onSearchStatus((data) => {
+            if (data.conversationId === conversationId) {
+                setSearchStatus(data.status)
+            }
+        }) : () => { }
+
+        const cleanupToolRequest = api.chat.onToolPermissionRequest ? api.chat.onToolPermissionRequest((data) => {
+            if (data.conversationId === conversationId) {
+                setPendingToolRequest({ requestId: data.requestId, toolName: data.toolName, args: data.args })
+            }
+        }) : () => { }
+
         const cleanupMessagesUpdated = api.conversations.onMessagesUpdated((data: { conversationId: string; message?: ChatMessage }) => {
             if (data.conversationId === conversationId) {
                 if (data.message) {
+                    const msg = data.message
                     setMessages((prev) => {
-                        if (prev.some(m => m.id === data.message!.id)) return prev
+                        if (prev.some(m => m.id === msg.id)) return prev
                         const optimisticIndex = prev.findIndex(m =>
-                            (m.id === data.message!.id) ||
+                            (m.id === msg.id) ||
                             (m.id.startsWith('temp-') &&
-                                m.role === data.message!.role &&
-                                m.content.trim() === data.message!.content.trim())
+                                m.role === msg.role &&
+                                m.content.trim() === msg.content.trim())
                         )
+                        const parsed = (msg.role === 'assistant' && (supportsThinking || msg.content?.includes('<think>') || msg.content?.toUpperCase().includes('[THOUGHT]')))
+                            ? parseThinkingProcess(msg.content)
+                            : { content: msg.content, isThinking: false }
+
                         if (optimisticIndex !== -1) {
                             const newMessages = [...prev]
                             newMessages[optimisticIndex] = {
-                                ...data.message!,
-                                ...(supportsThinking ? parseThinkingProcess(data.message!.content) : {})
+                                ...msg,
+                                ...parsed
                             }
                             return newMessages
                         }
+
                         return [...prev, {
-                            ...data.message!,
-                            ...(supportsThinking ? parseThinkingProcess(data.message!.content) : {})
+                            ...msg,
+                            ...parsed
                         }]
                     })
                 } else {
                     api.conversations.getMessages(conversationId!).then((msgs) => {
-                        // Parse thinking for historical messages as well 
-                        // Note: Only for assistants.
-                        const parsedMsgs = msgs.map(m => m.role === 'assistant'
-                            ? { ...m, ...(supportsThinking ? parseThinkingProcess(m.content) : {}) }
-                            : m
-                        )
-                        setMessages(parsedMsgs)
+                        setMessages(parseMessages(msgs, supportsThinking))
                     })
                 }
             }
         })
 
-        cleanupRef.current = [cleanupToken, cleanupComplete, cleanupError, cleanupMessagesUpdated]
+        cleanupRef.current = [cleanupToken, cleanupComplete, cleanupError, cleanupMessagesUpdated, cleanupSearchStatus, cleanupToolRequest]
 
         return () => {
             cleanupRef.current.forEach((fn) => fn())
             cleanupRef.current = []
         }
-    }, [conversationId])
+    }, [conversationId, supportsThinking])
 
     const sendMessage = useCallback(
         (content: string, options: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean; quotedMessageId?: string; quotedMessageText?: string } = {}, retryId?: string) => {
@@ -162,6 +190,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
             setIsStreaming(true)
             setIsThinking(false)
             setStreamingContent('')
+            setSearchStatus(null)
 
             const optimisticId = retryId || `temp-${Date.now()}`
             const optimisticMessage: ChatMessage = {
@@ -252,10 +281,24 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
         await api.chat.switchVersion(conversationId, messageId)
         // Reload messages to get updated isActive states
         const msgs = await api.conversations.getMessages(conversationId)
-        setMessages(msgs)
-    }, [conversationId])
+        setMessages(parseMessages(msgs, supportsThinking))
+    }, [conversationId, supportsThinking])
 
     const clearError = useCallback(() => setError(null), [])
+
+    const approveTool = useCallback((requestId: string) => {
+        const api = getLocalAI()
+        if (!api) return
+        api.chat.sendToolPermissionResponse(requestId, true)
+        setPendingToolRequest(null)
+    }, [])
+
+    const denyTool = useCallback((requestId: string) => {
+        const api = getLocalAI()
+        if (!api) return
+        api.chat.sendToolPermissionResponse(requestId, false)
+        setPendingToolRequest(null)
+    }, [])
 
     return {
         messages: messages.filter(m => m.role !== 'assistant' || m.isActive !== false || m.isAborted), // For linear UI
@@ -264,11 +307,15 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
         isStreaming,
         isThinking,
         error,
+        searchStatus,
         sendMessage,
         stopGeneration,
         clearError,
         retryMessage,
         resendLastMessage,
-        switchVersion
+        switchVersion,
+        approveTool,
+        denyTool,
+        pendingToolRequest
     }
 }

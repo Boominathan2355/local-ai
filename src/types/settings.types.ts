@@ -13,6 +13,8 @@ export interface AppSettings {
     anthropicApiKey?: string
     geminiApiKey?: string
     enabledCloudModels: string[]
+    mcpAllowedPaths?: string[]
+    mcpAutoApproveReads?: boolean
 }
 
 export const DEFAULT_SYSTEM_PROMPT = `You are a helpful, knowledgeable AI assistant running locally on the user's machine. You provide clear, accurate, and thoughtful responses. You are private, offline, and secure.`
@@ -31,5 +33,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     openaiApiKey: '',
     anthropicApiKey: '',
     geminiApiKey: '',
-    enabledCloudModels: ['gpt-4o', 'claude-3-5-sonnet', 'gemini-1.5-pro']
+    enabledCloudModels: ['gpt-4o', 'claude-3-5-sonnet', 'gemini-1.5-pro'],
+    mcpAllowedPaths: [],
+    mcpAutoApproveReads: false
 }

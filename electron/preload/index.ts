@@ -14,6 +14,9 @@ export interface LocalAIApi {
         onStreamToken: (callback: (event: StreamTokenEvent) => void) => () => void
         onStreamComplete: (callback: (data: { conversationId: string }) => void) => () => void
         onStreamError: (callback: (data: { conversationId: string; error: string }) => void) => () => void
+        onSearchStatus: (callback: (data: { conversationId: string; status: string }) => void) => () => void
+        onToolPermissionRequest: (callback: (data: { requestId: string; toolName: string; args: any; conversationId: string }) => void) => () => void
+        sendToolPermissionResponse: (requestId: string, approved: boolean) => void
         switchVersion: (conversationId: string, messageId: string) => Promise<{ success: boolean }>
     }
     conversations: {
@@ -98,6 +101,12 @@ const api: LocalAIApi = {
             createListener(IPC_CHANNELS.CHAT_STREAM_COMPLETE, callback),
         onStreamError: (callback) =>
             createListener(IPC_CHANNELS.CHAT_STREAM_ERROR, callback),
+        onSearchStatus: (callback) =>
+            createListener(IPC_CHANNELS.CHAT_SEARCH_STATUS, callback),
+        onToolPermissionRequest: (callback) =>
+            createListener(IPC_CHANNELS.CHAT_TOOL_PERMISSIONS_REQUEST, callback),
+        sendToolPermissionResponse: (requestId, approved) =>
+            ipcRenderer.send(IPC_CHANNELS.CHAT_TOOL_PERMISSIONS_RESPONSE, { requestId, approved }),
         switchVersion: (conversationId, messageId) =>
             ipcRenderer.invoke(IPC_CHANNELS.CHAT_SWITCH_VERSION, conversationId, messageId)
     },

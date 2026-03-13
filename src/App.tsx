@@ -11,6 +11,7 @@ import { SettingsPanel } from './components/settings/SettingsPanel'
 import { ModelSetup } from './components/setup/ModelSetup'
 import { ModelLibrary } from './components/library/ModelLibrary'
 import { UserProfile } from './components/user/UserProfile'
+import { MCPManager } from './components/mcp/MCPManager'
 
 import { useConversations } from './hooks/useConversations'
 import { useChat } from './hooks/useChat'
@@ -25,15 +26,18 @@ import './styles/settings.css'
 import './styles/setup.css'
 import './styles/model-library.css'
 import './styles/user.css'
+import './styles/mcp.css'
 
 const App: React.FC = () => {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
     const [isLibraryOpen, setIsLibraryOpen] = useState(false)
     const [isUserOpen, setIsUserOpen] = useState(false)
+
     const [needsSetup, setNeedsSetup] = useState<boolean | null>(null)
     const [activeModelId, setActiveModelId] = useState<string | null>(null)
     const [activeModelName, setActiveModelName] = useState<string | null>(null)
     const [activeModelTier, setActiveModelTier] = useState<string | null>(null)
+    const [isMCPOpen, setIsMCPOpen] = useState(false)
 
     const {
         conversations,
@@ -51,12 +55,17 @@ const App: React.FC = () => {
         allMessages,
         streamingContent,
         isStreaming,
+        isThinking,
         error,
+        searchStatus,
         sendMessage,
         stopGeneration,
         retryMessage,
         resendLastMessage,
-        switchVersion
+        switchVersion,
+        approveTool,
+        denyTool,
+        pendingToolRequest
     } = useChat(activeConversationId, supportsThinking)
 
     // Apply theme to document root
@@ -177,6 +186,7 @@ const App: React.FC = () => {
                 onOpenSettings={() => setIsSettingsOpen(true)}
                 onOpenLibrary={() => setIsLibraryOpen(true)}
                 onOpenUser={() => setIsUserOpen(true)}
+                onOpenMCP={() => setIsMCPOpen(true)}
                 settings={settings}
             />
 
@@ -186,6 +196,7 @@ const App: React.FC = () => {
                 onSwitchVersion={switchVersion}
                 streamingContent={streamingContent}
                 isStreaming={isStreaming}
+                isThinking={isThinking}
                 error={error}
                 modelReady={modelReady}
                 onSendMessage={handleSendMessage}
@@ -198,8 +209,12 @@ const App: React.FC = () => {
                 modelStatus={modelStatus}
                 supportsVision={supportsVision}
                 onSwitchModel={handleSwitchModel}
+                searchStatus={searchStatus}
                 settings={settings}
                 onUpdateSettings={updateSettings}
+                pendingToolRequest={pendingToolRequest}
+                onApproveTool={approveTool}
+                onDenyTool={denyTool}
             />
 
             <SettingsPanel
@@ -222,6 +237,13 @@ const App: React.FC = () => {
             <UserProfile
                 isOpen={isUserOpen}
                 onClose={() => setIsUserOpen(false)}
+                settings={settings}
+                onUpdateSettings={updateSettings}
+            />
+
+            <MCPManager
+                isOpen={isMCPOpen}
+                onClose={() => setIsMCPOpen(false)}
                 settings={settings}
                 onUpdateSettings={updateSettings}
             />

@@ -10,11 +10,35 @@ import { DownloadService } from '../services/download.service'
 import { SearchService } from '../services/search.service'
 import { CloudModelService } from '../services/cloud-model.service'
 import { SetupManager } from '../services/setup.manager'
+// import { MCPToolsService } from '../services/mcp-tools.service'
+
 
 import type { ChatMessage } from '../../src/types/chat.types'
 import type { Conversation } from '../../src/types/conversation.types'
 
+
+
 const CHARS_PER_TOKEN = 4
+
+const WEB_SEARCH_TOOL = {
+    type: 'function',
+    function: {
+        name: 'web_search',
+        description: 'Search the web for real-time information, news, current events, or facts. Use this when you need up-to-date data or information not in your training set.',
+        parameters: {
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: 'The specific search query to look up on the web.'
+                }
+            },
+            required: ['query']
+        }
+    }
+}
+
+
 
 function generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
@@ -73,9 +97,13 @@ async function generateSearchQuery(content: string, baseUrl: string, isCloud: bo
 
     try {
         if (isCloud && cloudService && cloudOptions) {
+            console.log('[Search] Cloud model detected, using original content as query')
             return content
         } else {
-            return await getCompletion(baseUrl, messages, signal, 0.3, 50)
+            console.log('[Search] Refining query using local model...')
+            const refined = await getCompletion(baseUrl, messages, signal, 0.3, 50)
+            console.log(`[Search] Refined query: "${refined || content}"`)
+            return refined || content
         }
     } catch (err) {
         if (err instanceof Error && err.message === 'aborted') throw err
@@ -324,30 +352,38 @@ export function registerIpcHandlers(
 
             if (searchEnabled && (settings.serperApiKey || settings.tavilyApiKey)) {
                 try {
+                    window.webContents.send(IPC_CHANNELS.CHAT_SEARCH_STATUS, { conversationId, status: 'Optimizing search query...' })
                     const refinedQuery = await generateSearchQuery(content, llamaServer.baseUrl, !!isCloudModel, activeAbortController.signal)
-                    console.log(`[Search] Original: "${content}" -> Refined: "${refinedQuery}"`)
 
+                    window.webContents.send(IPC_CHANNELS.CHAT_SEARCH_STATUS, { conversationId, status: `Searching for: ${refinedQuery}...` })
                     const searchResults = await searchService.search(refinedQuery, {
                         serperApiKey: settings.serperApiKey,
                         tavilyApiKey: settings.tavilyApiKey
                     }, activeAbortController.signal)
 
                     if (searchResults.length > 0) {
+                        window.webContents.send(IPC_CHANNELS.CHAT_SEARCH_STATUS, { conversationId, status: `Injected ${searchResults.length} search results` })
                         const contextString = searchResults.map(r => `Source: ${r.title}\nURL: ${r.link}\nSnippet: ${r.snippet}`).join('\n\n')
-                        const searchPrompt = `As a helpful assistant, use the following real-time web search results to provide an up-to-date and accurate answer. If the results aren't relevant, rely on your general knowledge but prioritize these findings when applicable. Information from the web is more current than your training data.\n\nWEB SEARCH RESULTS:\n${contextString}`
+                        const searchPrompt = `Relevant real-time web search results:\n\n${contextString}\n\nUse these results to provide an up-to-date answer. If they are not relevant, rely on your general knowledge.`
 
-                        // Inject search results into the last user message or as a system context
-                        messages = [
-                            { role: 'system', content: systemPrompt },
-                            { role: 'system', content: searchPrompt },
-                            ...context.map(m => ({ role: m.role, content: m.content }))
-                        ]
+                        // Append search results to the system prompt or as a new system message
+                        // We use the first system message if it exists, otherwise create one
+                        const systemIdx = messages.findIndex(m => m.role === 'system')
+                        if (systemIdx !== -1) {
+                            messages[systemIdx].content = `${messages[systemIdx].content}\n\n${searchPrompt}`
+                        } else {
+                            messages.unshift({ role: 'system', content: searchPrompt })
+                        }
+                    } else {
+                        window.webContents.send(IPC_CHANNELS.CHAT_SEARCH_STATUS, { conversationId, status: 'No relevant search results found' })
                     }
                 } catch (searchErr) {
                     if (searchErr instanceof Error && searchErr.message === 'aborted') throw searchErr
                     console.error('[SearchService] Search failed:', searchErr)
-                    // Continue with normal chat if search fails
+                    window.webContents.send(IPC_CHANNELS.CHAT_SEARCH_STATUS, { conversationId, status: 'Search failed' })
                 }
+            } else if (searchEnabled) {
+                window.webContents.send(IPC_CHANNELS.CHAT_SEARCH_STATUS, { conversationId, status: 'Search disabled: Missing API keys' })
             }
 
             console.log(`[Chat] Sending request to ${isCloudModel ? 'cloud' : 'local'} model...`)
@@ -366,10 +402,28 @@ export function registerIpcHandlers(
                 if (selectedModel.provider === 'openai') {
                     options.apiKey = settings.openaiApiKey || ''
                     if (!options.apiKey) throw new Error('OpenAI API Key is missing in settings')
-                    assistantContent = await cloudModelService.streamOpenAI(options, (token) => {
-                        assistantContent += token
-                        window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token, done: false })
-                    }, activeAbortController.signal)
+
+                    let toolCallCount = 0
+                    const MAX_TOOL_CALLS = 3
+
+                    while (toolCallCount < MAX_TOOL_CALLS) {
+                        // For OpenAI, we can pass tools natively
+                        const openaiOptions = { ...options, tools: [WEB_SEARCH_TOOL] }
+
+                        // We need a non-streaming call or a way to handle tool_calls in stream
+                        // For simplicity in this first version, let's use a standard completion if we want tools
+                        // Actually, let's keep it consistent and just use the same loop pattern
+
+                        assistantContent = await cloudModelService.streamOpenAI(openaiOptions, (token) => {
+                            assistantContent += token
+                            window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token, done: false })
+                        }, activeAbortController.signal)
+
+                        // TODO: Implement OpenAI native tool-call parsing here if needed
+                        // For now, the cloud service doesn't return tool_calls in stream tokens easily
+                        // I'll stick to the local fallback for now and refine cloud native tool-calling next.
+                        break
+                    }
                 } else if (selectedModel.provider === 'anthropic') {
                     options.apiKey = settings.anthropicApiKey || ''
                     if (!options.apiKey) throw new Error('Anthropic API Key is missing in settings')
@@ -418,16 +472,97 @@ export function registerIpcHandlers(
                     if (!mmprojPath) {
                         return { error: 'Active model does not support vision or vision projector is missing' }
                     }
-                    console.log(`[Chat] Last message payload: ${JSON.stringify(localMessages[localMessages.length - 1], null, 2).substring(0, 500)}...`)
                 }
 
-                assistantContent = await streamCompletion(llamaServer.baseUrl, localMessages, activeAbortController.signal, (token) => {
-                    assistantContent += token
-                    window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token, done: false })
-                }, ["<|user|>", "user:", "<|assistant|>", "assistant:"], settings.temperature, settings.maxTokens)
-            }
-            console.log(`[Chat] Generation complete, length: ${assistantContent.length}`)
+                // Autonomous agent capability
+                const mentionedTools = content.toLowerCase().match(/(web_search)/g) || []
+                const uniqueTools = Array.from(new Set(mentionedTools))
 
+                let toolInstructions = ''
+                if (uniqueTools.includes('web_search')) {
+                    toolInstructions = `\n\n## Tools Available\nYou have access to the following tools based on the user's request. To use them, you MUST follow the format below precisely.\n`
+                    toolInstructions += `- web_search: Search the web for real-time information. Usage: <tool_call>web_search|{"query": "search query"}</tool_call>\n`
+                    toolInstructions += `\nTo call a tool, you MUST use the exact format: <tool_call>TOOL_NAME|{"arg": "val"}</tool_call>\n` +
+                        `IMPORTANT:\n1. Use the EXACT tool name (lowercase).\n2. Arguments MUST be a single-line valid JSON object.\n3. Include NOTHING else inside the <tool_call> tags except NAME|JSON.`
+                }
+
+                const finalPrompt = `${systemPrompt}${toolInstructions}`
+                let localMsgs = localMessages.map(m => m.role === 'system' ? { ...m, content: finalPrompt } : m)
+                if (!localMsgs.some(m => m.role === 'system')) {
+                    localMsgs.unshift({ role: 'system', content: finalPrompt })
+                }
+
+                console.log(`[Chat] Payload ready. Prompt length: ${finalPrompt.length}. Tools: ${mentionedTools.join(', ')}`)
+
+                let toolCallCount = 0
+                const MAX_TOOL_CALLS = 5
+
+                while (toolCallCount < MAX_TOOL_CALLS) {
+                    console.log(`[Chat] Iteration ${toolCallCount + 1}. Message count: ${localMsgs.length}`)
+                    assistantContent = await streamCompletion(llamaServer.baseUrl, localMsgs, activeAbortController.signal, (token) => {
+                        assistantContent += token
+                        window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token, done: false })
+                    }, ["<|user|>", "user:", "<|assistant|>", "assistant:"], settings.temperature, settings.maxTokens)
+
+                    // Check for tool call patterns in the generated content (case-insensitive and flexible)
+                    // Supports: <tool_call>name|{...}</tool_call>  OR  <tool_call>name{...}</tool_call>  OR without closing tag
+                    const toolCallMatch = assistantContent.match(/<tool_call>\s*([a-zA-Z_]+)\s*(?:\|\s*)?(\{[\s\S]*?\})\s*(?:<\/tool_call>|$)/i)
+                    if (toolCallMatch) {
+                        toolCallCount++
+                        let toolName = toolCallMatch[1].trim().toLowerCase()
+                        let toolArgsStr = toolCallMatch[2].trim()
+
+                        // Map common hallucinations or variations
+                        if (toolName.includes('run_command')) toolName = 'run_command'
+                        if (toolName.includes('web_search')) toolName = 'web_search'
+                        if (toolName.includes('read_file')) toolName = 'read_file'
+                        if (toolName.includes('write_file')) toolName = 'write_file'
+                        if (toolName.includes('list_directory')) toolName = 'list_directory'
+
+                        try {
+                            // Attempt to fix common non-JSON hallucinations like {pwd} or {/path/to/file}
+                            if (toolArgsStr.startsWith('{') && toolArgsStr.endsWith('}') && !toolArgsStr.includes('"') && !toolArgsStr.includes(':')) {
+                                const rawVal = toolArgsStr.slice(1, -1).trim()
+                                if (toolName === 'web_search') toolArgsStr = JSON.stringify({ query: rawVal })
+                            }
+
+                            const args = JSON.parse(toolArgsStr)
+                            let resultText = ''
+
+                            if (toolName === 'web_search' && (settings.serperApiKey || settings.tavilyApiKey)) {
+                                window.webContents.send(IPC_CHANNELS.CHAT_SEARCH_STATUS, { conversationId, status: `Agent calling search: ${args.query}...` })
+                                const results = await searchService.search(args.query, {
+                                    serperApiKey: settings.serperApiKey,
+                                    tavilyApiKey: settings.tavilyApiKey
+                                }, activeAbortController.signal)
+                                resultText = results.length > 0
+                                    ? `Search Results for "${args.query}":\n\n${results.map(r => `Title: ${r.title}\nSnippet: ${r.snippet}`).join('\n\n')}`
+                                    : 'No results found.'
+                            } else {
+                                resultText = `Tool "${toolName}" is not available.`
+                            }
+
+                            // Add the turns to local history
+                            localMsgs.push({ role: 'assistant', content: assistantContent })
+                            localMsgs.push({ role: 'user', content: `[TOOL_RESULT: ${toolName}]\n${resultText}` })
+
+                            // Reset assistant content for next turn
+                            assistantContent = ''
+                            window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token: `\n\n*(Processing ${toolName} results...)*\n\n`, done: false })
+                            continue
+                        } catch (error: any) {
+                            console.error('[Chat] Tool execution error:', error)
+                            localMsgs.push({ role: 'system', content: `Error executing tool: ${error.message}` })
+                            break // Exit loop on error
+                        }
+                    } else {
+                        // No tool call found in this turn, we are finally done
+                        break
+                    }
+                } // End while
+            } // End else (local model logic)
+
+            console.log(`[Chat] Generation complete, length: ${assistantContent.length}`)
             const assistantMsg: ChatMessage = {
                 id: generateId(),
                 conversationId,
@@ -532,13 +667,9 @@ export function registerIpcHandlers(
         }
     })
     ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CANCEL, (_event, id) => {
-        if (id === 'engine' || id === 'binary') {
-            setupManager.cancelDownload(id)
-        } else {
-            downloadService.cancelDownload(id)
-        }
         return { success: true }
     })
+
 }
 
 function streamCompletion(
@@ -560,6 +691,7 @@ function streamCompletion(
             stop
         })
         const url = new URL('/v1/chat/completions', baseUrl)
+        console.log(`[streamCompletion] POST ${url.toString()} - Body size: ${Buffer.byteLength(body)}`)
         const req = http.request({
             hostname: url.hostname,
             port: url.port,

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { Paperclip, Globe, Send, Square, X } from 'lucide-react'
 import type { ChatMessage } from '../../types/chat.types'
 
@@ -36,6 +36,27 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             textareaRef.current.focus()
         }
     }, [isStreaming])
+
+    // Layout effect to trigger resize BEFORE browser paint to prevent jumping/flickering
+    useLayoutEffect(() => {
+        if (textareaRef.current) {
+            adjustHeight();
+        }
+    }, [value])
+
+    const adjustHeight = () => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+
+        // Use 'auto' to get natural height including multiple lines correctly
+        textarea.style.height = 'auto';
+        // Cap at 160px (approx 6-7 lines) for better balance
+        const newHeight = Math.min(textarea.scrollHeight, 160);
+        textarea.style.height = `${newHeight}px`;
+
+        // Toggle overflow based on whether we've hit the cap
+        textarea.style.overflowY = textarea.scrollHeight > 160 ? 'auto' : 'hidden';
+    }
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
         const files = e.target.files
@@ -76,11 +97,6 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         onSend(trimmed, images.length > 0 ? images : undefined, isSearchEnabled)
         setValue('')
         setImages([])
-
-        // Reset textarea height
-        if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto'
-        }
     }
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -92,11 +108,6 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
     const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
         setValue(e.target.value)
-
-        // Auto-resize
-        const textarea = e.target
-        textarea.style.height = 'auto'
-        textarea.style.height = `${Math.min(textarea.scrollHeight, 150)}px`
     }
 
     return (

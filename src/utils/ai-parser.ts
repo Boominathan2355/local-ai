@@ -5,48 +5,95 @@ export interface ParsedModelOutput {
 }
 
 /**
- * Parses the raw text output from a model to extract content within <think>...</think> tags.
- * Returns the separated reasoning content and the final response content.
+ * Parses the raw text output from a model to extract content within <think> or [THOUGHT] tags.
+ * Iteratively collects all distinct reasoning blocks and merges them.
  * 
  * @param text The raw output from the language model
- * @returns ParsedModelOutput containing content, optional reasoning, and thinking status
+ * @returns ParsedModelOutput 
  */
 export function parseThinkingProcess(text: string): ParsedModelOutput {
     if (!text) {
         return { content: '', isThinking: false }
     }
 
-    const thinkStartMatch = text.match(/<think>/)
+    const TAG_PAIRS = [
+        { start: /<think>/i, end: /<\/think>/i, implicitEnds: [] },
+        { start: /\[THOUGHT\]/i, end: /\[\/THOUGHT\]/i, implicitEnds: [/\[FINAL\]/i, /\[ANSWER\]/i] }
+    ]
 
-    // If no <think> wrapper exists, it's just regular content
-    if (!thinkStartMatch || thinkStartMatch.index === undefined) {
-        return { content: text, isThinking: false }
-    }
+    let totalReasoning = ''
+    let finalContent = ''
+    let remainingText = text
+    let isCurrentlyThinking = false
 
-    // Usually models only output one <think> block at the very beginning,
-    // but we'll parse the last one in case there are multiple or it's malformed.
-    const firstThinkStart = thinkStartMatch.index
+    while (remainingText.length > 0) {
+        let earliestMatch: { startIdx: number, pairIdx: number, matchText: string } | null = null
 
-    // Extract everything before the first <think> tag as standard content
-    let content = text.substring(0, firstThinkStart)
-    let reasoningContent = ''
+        // Find the earliest starting tag in the remaining text
+        for (let i = 0; i < TAG_PAIRS.length; i++) {
+            const match = remainingText.match(TAG_PAIRS[i].start)
+            if (match && match.index !== undefined) {
+                if (!earliestMatch || match.index < earliestMatch.startIdx) {
+                    earliestMatch = { startIdx: match.index, pairIdx: i, matchText: match[0] }
+                }
+            }
+        }
 
-    const thinkEndMatch = text.indexOf('</think>', firstThinkStart)
-    const isThinking = thinkEndMatch === -1
+        if (!earliestMatch) {
+            // No more reasoning blocks found
+            finalContent += remainingText
+            break
+        }
 
-    if (isThinking) {
-        // Still thinking, take everything after <think>
-        reasoningContent = text.substring(firstThinkStart + 7) // 7 is length of <think>
-    } else {
-        // Thinking is complete
-        reasoningContent = text.substring(firstThinkStart + 7, thinkEndMatch)
-        // Add anything after </think> back to the main content
-        content += text.substring(thinkEndMatch + 8) // 8 is length of </think>
+        // Add everything before the start tag to the final content
+        finalContent += remainingText.substring(0, earliestMatch.startIdx)
+
+        const pair = TAG_PAIRS[earliestMatch.pairIdx]
+        const startTagLength = earliestMatch.matchText.length
+        const startTagEndIdx = earliestMatch.startIdx + startTagLength
+
+        // Search for the end tag in the rest of the text
+        const searchSpace = remainingText.substring(startTagEndIdx)
+        const explicitEndMatch = searchSpace.match(pair.end)
+
+        let endRelIdx = -1
+        let endTagLength = 0
+
+        if (explicitEndMatch && explicitEndMatch.index !== undefined) {
+            endRelIdx = explicitEndMatch.index
+            endTagLength = explicitEndMatch[0].length
+        } else {
+            // Check for implicit ends if no explicit end found
+            for (const implicitRegex of pair.implicitEnds) {
+                const implicitMatch = searchSpace.match(implicitRegex)
+                if (implicitMatch && implicitMatch.index !== undefined) {
+                    if (endRelIdx === -1 || implicitMatch.index < endRelIdx) {
+                        endRelIdx = implicitMatch.index
+                        endTagLength = implicitMatch[0].length // Now stripping the implicit tag too
+                    }
+                }
+            }
+        }
+
+        if (endRelIdx === -1) {
+            // No end tag found - this block is still "thinking" (possibly streaming)
+            const reasoning = searchSpace
+            totalReasoning += (totalReasoning ? '\n\n' : '') + reasoning.trim()
+            isCurrentlyThinking = true
+            remainingText = '' // Consume the rest of the text
+        } else {
+            // Found an end tag
+            const reasoning = searchSpace.substring(0, endRelIdx)
+            totalReasoning += (totalReasoning ? '\n\n' : '') + reasoning.trim()
+
+            // Advance remainingText past the reasoning and the end tag
+            remainingText = searchSpace.substring(endRelIdx + endTagLength)
+        }
     }
 
     return {
-        content: content.trim(),
-        reasoningContent: reasoningContent.trim(),
-        isThinking
+        content: finalContent.trim(),
+        reasoningContent: totalReasoning.trim(),
+        isThinking: isCurrentlyThinking
     }
 }

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
+import os from 'os'
 import { is } from '@electron-toolkit/utils'
 
 import { LlamaServerService } from '../services/llama-server.service'
@@ -8,6 +9,7 @@ import { DownloadService } from '../services/download.service'
 import { SetupManager } from '../services/setup.manager'
 import { SearchService } from '../services/search.service'
 import { CloudModelService } from '../services/cloud-model.service'
+// import { MCPToolsService } from '../services/mcp-tools.service'
 import { registerIpcHandlers } from '../ipc/handlers'
 import { IPC_CHANNELS } from '../ipc/channels'
 
@@ -25,6 +27,7 @@ let downloadService: DownloadService | null = null
 let setupManager: SetupManager | null = null
 let searchService: SearchService | null = null
 let cloudModelService: CloudModelService | null = null
+// let mcpToolsService: MCPToolsService | null = null
 
 function createWindow(): void {
     mainWindow = new BrowserWindow({
@@ -71,6 +74,9 @@ function initServices(): void {
     setupManager = new SetupManager(llamaBasePath, downloadService)
     searchService = new SearchService()
     cloudModelService = new CloudModelService()
+
+    const settings = storage.getSettings()
+    // mcpToolsService = new MCPToolsService(settings.mcpAllowedPaths || [os.homedir()])
 
     const initialModelPath = downloadService.getFirstAvailableModelPath()
     let initialModelId: string | null = null
@@ -120,6 +126,9 @@ function initServices(): void {
 
     storage.on('settingsChanged', (settings) => {
         mainWindow?.webContents.send(IPC_CHANNELS.SETTINGS_CHANGED, settings)
+        // if (mcpToolsService) {
+        //     mcpToolsService.updateAllowedPaths(settings.mcpAllowedPaths || [os.homedir()])
+        // }
     })
 
     if (setupManager.isBinaryDownloaded() && initialModelPath) {

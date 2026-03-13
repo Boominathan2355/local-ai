@@ -77,7 +77,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             onSwitchVersion(siblings[currentVersionIdx - 1].id)
         }
     }
-
     const handleCopy = (): void => {
         navigator.clipboard.writeText(message.content)
         setCopied(true)
@@ -100,17 +99,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     }
 
     const handleReply = () => {
-        if (!onReply) return
-        const selection = window.getSelection()
-        const selectedText = selection ? selection.toString().trim() : ''
-        onReply(message.id, selectedText || undefined)
+        // Obsolete - removed from action bar
     }
 
     const hasImages = message.images && message.images.length > 0
     const isError = (message as any).isError // We might need to flag failed messages
 
     return (
-        <div className={`message message--${message.role} ${isError ? 'message--error' : ''}`} id={`message-${message.id}`}>
+        <div
+            className={`message message--${message.role} ${isError ? 'message--error' : ''}`}
+            id={`message-${message.id}`}
+        >
             <div className="message__wrapper">
                 {!isUser && message.role !== 'tool' && (
                     <div className="message__avatar message__avatar--assistant">
@@ -181,11 +180,16 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                             })()}
                         </div>
                     ) : isUser ? (
-                        <div className="message__content">{message.content}</div>
+                        <div className="message__content message__content--user-markdown">
+                            <MarkdownRenderer content={message.content} />
+                        </div>
                     ) : (
                         <div className="message__content message__content--markdown">
                             {message.reasoningContent && (
-                                <ReasoningBlock reasoningContent={message.reasoningContent} />
+                                <ReasoningBlock
+                                    reasoningContent={message.reasoningContent}
+                                    isThinking={message.isThinking}
+                                />
                             )}
                             <MarkdownRenderer content={message.content} />
                         </div>
@@ -208,9 +212,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             </div>
 
             <div className={`message__actions ${isUser ? 'message__actions--right' : 'message__actions--left'}`}>
-                <button className="message__action-btn" onClick={handleReply} title="Reply">
-                    <Reply size={14} />
-                </button>
                 <button className="message__action-btn" onClick={handleCopy} title="Copy">
                     {copied ? <Check size={14} /> : <Copy size={14} />}
                 </button>
