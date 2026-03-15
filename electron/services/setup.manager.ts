@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, createWriteStream, unlinkSync, renameSync, chmod
 import path from 'path'
 import http from 'http'
 import https from 'https'
-import { execSync } from 'child_process'
+import { exec, execSync } from 'child_process'
 
 import { DownloadService } from './download.service'
 
@@ -39,12 +39,17 @@ export class SetupManager extends EventEmitter {
     private activeDownloads = new Map<string, { abort: () => void }>()
     private readonly llamaDir: string
     private downloadService: DownloadService
+    private isInstalling = false
+    private isResolving = false
 
     constructor(llamaBasePath: string, downloadService: DownloadService) {
         super()
         this.llamaDir = llamaBasePath
         this.downloadService = downloadService
-        mkdirSync(this.llamaDir, { recursive: true })
+        
+        if (!existsSync(this.llamaDir)) {
+            mkdirSync(this.llamaDir, { recursive: true })
+        }
     }
 
     getBinaryPath(): string {
@@ -56,25 +61,32 @@ export class SetupManager extends EventEmitter {
     }
 
     async getStatus(): Promise<SetupStatus> {
-        const hasBinary = this.isBinaryDownloaded()
-        const modelPath = this.downloadService.getFirstAvailableModelPath()
+        const binDir = path.join(this.llamaDir, 'bin')
+        const binPath = path.join(binDir, BINARY_FILENAME)
+        const modelsDir = path.join(this.llamaDir, 'models')
+        
+        let hasModel = false
+        let modelPath: string | null = null
+        
+        if (existsSync(modelsDir)) {
+            const models = this.downloadService.getDownloadedModels()
+            if (models.length > 0) {
+                hasModel = true
+                modelPath = models[0].path
+            }
+        }
 
         return {
-            hasBinary,
-            hasModel: modelPath !== null,
-            binaryPath: this.getBinaryPath(),
-            modelPath: modelPath,
-            llamaDir: this.llamaDir,
-            updateAvailable: false // In a real scenario, this could be cached or checked periodically
+            hasBinary: existsSync(binPath),
+            hasModel,
+            binaryPath: binPath,
+            modelPath,
+            llamaDir: this.llamaDir
         }
     }
 
-    async checkForUpdates(): Promise<UpdateInfo> {
+    async checkForUpdate(): Promise<UpdateInfo> {
         try {
-            // For now, simply resolving the latest URL is our "check"
-            // If we had a way to check local version vs remote version, we'd do it here.
-            // Since we don't store local version easily, we can assume update available if this resolves successfully for demonstration,
-            // or just rely on manual updates. A better way would be to check the binary version output, but for now we just return true.
             const url = await this.resolveLatestBinaryUrl()
             return {
                 updateAvailable: true,
@@ -86,12 +98,53 @@ export class SetupManager extends EventEmitter {
         }
     }
 
-    async installEngine(): Promise<string> {
-        return this.downloadAndExtractBinary()
+    public async installEngine(): Promise<void> {
+        if (this.isInstalling) return
+        this.isInstalling = true
+
+        try {
+            console.log('[SetupManager] Starting engine installation...')
+            this.emit('status', {
+                status: 'installing',
+                step: 'downloading',
+                message: 'Resolving latest binary...'
+            })
+
+            const downloadUrl = await this.resolveLatestBinaryUrl()
+            const archiveExt = IS_WINDOWS ? '.zip' : '.tar.gz'
+            const archivePath = path.join(this.llamaDir, `llama-bin${archiveExt}`)
+
+            this.emit('status', {
+                status: 'installing',
+                step: 'downloading',
+                message: 'Downloading engine...'
+            })
+
+            await this.downloadAndExtractBinary(downloadUrl, archivePath)
+            
+            this.emit('status', {
+                status: 'complete',
+                step: 'done',
+                message: 'Installation complete'
+            })
+        } catch (err) {
+            console.error('[SetupManager] Installation failed:', err)
+            this.emit('status', {
+                status: 'error',
+                step: 'error',
+                message: err instanceof Error ? err.message : 'Unknown error'
+            })
+            throw err
+        } finally {
+            this.isInstalling = false
+        }
     }
 
-    async updateEngine(): Promise<string> {
-        return this.downloadAndExtractBinary()
+    async updateEngine(): Promise<void> {
+        const url = await this.resolveLatestBinaryUrl()
+        const archiveExt = IS_WINDOWS ? '.zip' : '.tar.gz'
+        const archivePath = path.join(this.llamaDir, `llama-bin${archiveExt}`)
+        await this.downloadAndExtractBinary(url, archivePath)
     }
 
     cancelDownload(downloadId: string): void {
@@ -102,66 +155,58 @@ export class SetupManager extends EventEmitter {
         }
     }
 
-    private async downloadAndExtractBinary(): Promise<string> {
-        const archiveUrl = await this.resolveLatestBinaryUrl()
-        const archiveExt = IS_WINDOWS ? '.zip' : '.tar.gz'
-        const archivePath = path.join(this.llamaDir, `llama-bin${archiveExt}`)
-
-        await this.downloadFile(archiveUrl, archivePath, 'binary')
-
-        const destPath = path.join(this.llamaDir, BINARY_FILENAME)
+    private async downloadAndExtractBinary(url: string, archivePath: string): Promise<string> {
         try {
-            const extractDir = path.join(this.llamaDir, '_extract_tmp')
-            mkdirSync(extractDir, { recursive: true })
-
-            if (IS_WINDOWS) {
-                execSync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${extractDir}' -Force"`, { timeout: 60000 })
-                const findResult = execSync(
-                    `powershell -Command "Get-ChildItem -Path '${extractDir}' -Recurse -Filter 'llama-server.exe' | Select-Object -First 1 -ExpandProperty FullName"`,
-                    { encoding: 'utf-8', timeout: 10000 }
-                ).trim()
-
-                if (!findResult) {
-                    throw new Error('llama-server.exe not found in archive')
-                }
-
-                const binDir = path.dirname(findResult)
-                execSync(`powershell -Command "Copy-Item -Path '${binDir}\\*' -Destination '${this.llamaDir}' -Force"`, { timeout: 10000 })
-            } else {
-                execSync(`tar -xzf "${archivePath}" -C "${extractDir}"`, { timeout: 30000 })
-
-                const findResult = execSync(
-                    `find "${extractDir}" -name "llama-server" -type f | head -1`,
-                    { encoding: 'utf-8', timeout: 5000 }
-                ).trim()
-
-                if (!findResult) {
-                    throw new Error('llama-server binary not found in archive')
-                }
-
-                const binDir = path.dirname(findResult)
-                execSync(`cp -f "${binDir}"/* "${this.llamaDir}/"`, { timeout: 10000 })
-                chmodSync(destPath, 0o755)
+            const binaryDir = path.join(this.llamaDir, 'bin')
+            if (!existsSync(binaryDir)) {
+                mkdirSync(binaryDir, { recursive: true })
             }
 
+            console.log('[SetupManager] Downloading binary from:', url)
+            await this.downloadFile(url, archivePath, 'binary')
+
+            console.log('[SetupManager] Extracting binary...')
+            this.emit('status', {
+                status: 'installing',
+                step: 'extracting',
+                message: 'Extracting engine...'
+            })
+
+            const extractCmd = IS_WINDOWS 
+                ? `powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${binaryDir}' -Force"`
+                : `tar -xzf "${archivePath}" -C "${binaryDir}"`
+
+            console.log(`[SetupManager] Running extraction: ${extractCmd}`)
+
+            await new Promise<void>((resolve, reject) => {
+                exec(extractCmd, { timeout: 60000 }, (error) => {
+                    if (error) {
+                        console.error('[SetupManager] Extraction failed:', error)
+                        reject(error)
+                        return
+                    }
+                    console.log('[SetupManager] Extraction complete')
+                    resolve()
+                })
+            })
+
             try {
-                unlinkSync(archivePath)
-                if (IS_WINDOWS) {
-                    execSync(`powershell -Command "Remove-Item -Path '${extractDir}' -Recurse -Force"`, { timeout: 5000 })
-                } else {
-                    execSync(`rm -rf "${extractDir}"`, { timeout: 5000 })
-                }
-            } catch { /* ignored */ }
+                if (existsSync(archivePath)) unlinkSync(archivePath)
+            } catch { /* ignore */ }
+
+            return binaryDir
         } catch (err) {
+            console.error('[SetupManager] downloadAndExtractBinary failed:', err)
             try { if (existsSync(archivePath)) unlinkSync(archivePath) } catch { /* ignore */ }
             throw err
         }
-
-        return destPath
     }
 
     private resolveLatestBinaryUrl(): Promise<string> {
-        return new Promise((resolve, reject) => {
+        if (this.isResolving) return Promise.reject(new Error('Resolution already in progress'))
+        this.isResolving = true
+
+        return new Promise<string>((resolve, reject) => {
             const options = {
                 hostname: 'api.github.com',
                 path: '/repos/ggml-org/llama.cpp/releases/latest',
@@ -170,8 +215,10 @@ export class SetupManager extends EventEmitter {
 
             https.get(options, (res) => {
                 let body = ''
+                console.log(`[SetupManager] resolveLatestBinaryUrl: HTTP ${res.statusCode}`)
                 res.on('data', (chunk: Buffer) => { body += chunk.toString() })
                 res.on('end', () => {
+                    console.log(`[SetupManager] resolveLatestBinaryUrl: Body length ${body.length}`)
                     try {
                         const release = JSON.parse(body)
                         const assets = release.assets as Array<{ name: string; browser_download_url: string }>
@@ -184,7 +231,7 @@ export class SetupManager extends EventEmitter {
 
                         if (IS_WINDOWS) {
                             asset = assets.find((a) =>
-                                a.name.includes('win-amd64') &&
+                                (a.name.includes('win-amd64') || a.name.includes('win-cpu-x64') || a.name.includes('win-x64')) &&
                                 a.name.endsWith('.zip') &&
                                 !a.name.includes('vulkan') &&
                                 !a.name.includes('rocm')
@@ -199,18 +246,30 @@ export class SetupManager extends EventEmitter {
                         }
 
                         if (!asset) {
-                            const platformLabel = IS_WINDOWS ? 'win-amd64' : 'ubuntu-x64'
+                            const platformLabel = IS_WINDOWS ? 'Windows (x64)' : 'Ubuntu (x64)'
+                            console.error(`[SetupManager] No compatible binary found for ${platformLabel}. Available assets:`, assets.map(a => a.name))
                             reject(new Error(`No ${platformLabel} binary found in latest release`))
                             return
                         }
 
+                        console.log(`[SetupManager] Resolved latest binary URL: ${asset.browser_download_url} (${asset.name})`)
                         resolve(asset.browser_download_url)
-                    } catch {
+                    } catch (err) {
+                        console.error('[SetupManager] Failed to resolve latest binary URL:', err)
                         reject(new Error('Failed to parse GitHub API response'))
                     }
                 })
-                res.on('error', reject)
-            }).on('error', reject)
+                res.on('error', (err) => {
+                    console.error('[SetupManager] GitHub API request error:', err)
+                    reject(err)
+                })
+            }).on('error', (err) => {
+                console.error('[SetupManager] GitHub API request error:', err)
+                this.isResolving = false
+                reject(err)
+            })
+        }).finally(() => {
+            this.isResolving = false
         })
     }
 
@@ -227,6 +286,7 @@ export class SetupManager extends EventEmitter {
 
             const abort = (): void => {
                 aborted = true
+                console.log(`[Setup] Download cancelled: ${downloadId}`)
                 cleanup()
                 reject(new Error('Download cancelled'))
             }
@@ -240,9 +300,14 @@ export class SetupManager extends EventEmitter {
                     return
                 }
 
+                console.log('[Setup] Starting download from:', downloadUrl)
+                console.log('[Setup] Platform:', process.platform, 'Arch:', process.arch)
+
                 const client = downloadUrl.startsWith('https') ? https : http
-                const req = client.get(downloadUrl, (res) => {
+                const req = client.get(downloadUrl, { timeout: 30000 }, (res) => {
+                    console.log(`[SetupManager] downloadFile: HTTP ${res.statusCode} for ${downloadUrl}`)
                     if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                        console.log(`[Setup] Redirecting to: ${res.headers.location}`)
                         startDownload(res.headers.location, redirectCount + 1)
                         return
                     }
@@ -252,6 +317,8 @@ export class SetupManager extends EventEmitter {
                         reject(new Error(`Download failed: HTTP ${res.statusCode}`))
                         return
                     }
+
+                    console.log('[Setup] First chunk received, download is flowing')
 
                     const total = parseInt(res.headers['content-length'] ?? '0', 10)
                     let downloaded = 0
@@ -266,15 +333,22 @@ export class SetupManager extends EventEmitter {
                         const elapsed = (Date.now() - startTime) / 1000
                         const speedMBps = elapsed > 0 ? (downloaded / (1024 * 1024)) / elapsed : 0
                         const remaining = total > 0 ? ((total - downloaded) / (1024 * 1024)) / (speedMBps || 1) : 0
+                        const percent = total > 0 ? (downloaded / total) * 100 : 0
 
                         const progress: DownloadProgress = {
                             id: downloadId,
                             filename: path.basename(destPath),
                             downloaded,
                             total,
-                            percent: total > 0 ? Math.round((downloaded / total) * 100) : 0,
+                            percent: Math.round(percent),
                             speedMBps: Math.round(speedMBps * 100) / 100,
                             etaSeconds: Math.round(remaining)
+                        }
+
+                        // user requested log:
+                        // console.log('[Setup] Progress:', Math.round(percent), '% -', bytesDownloaded, '/', totalBytes)
+                        if (downloaded % (1024 * 1024 * 5) < chunk.length) { // Log every ~5MB to avoid spamming
+                             console.log('[Setup] Progress:', Math.round(percent), '% -', downloaded, '/', total)
                         }
 
                         this.emit('progress', progress)
@@ -283,6 +357,7 @@ export class SetupManager extends EventEmitter {
                     res.pipe(file)
 
                     file.on('finish', () => {
+                        req.destroy() // Explicitly destroy to clear timeouts
                         file.close(() => {
                             if (aborted) {
                                 cleanup()
@@ -291,7 +366,9 @@ export class SetupManager extends EventEmitter {
 
                             try {
                                 renameSync(tempPath, destPath)
+                                console.log('[Setup] Download complete')
                             } catch (err) {
+                                console.error('[Setup] Failed to rename temp file:', err)
                                 reject(err)
                                 return
                             }
@@ -303,7 +380,15 @@ export class SetupManager extends EventEmitter {
                     })
                 })
 
+                req.on('timeout', () => {
+                    console.error('[Setup] Download timed out after 30 seconds')
+                    req.destroy()
+                    cleanup()
+                    reject(new Error('Download timed out after 30 seconds'))
+                })
+
                 req.on('error', (err) => {
+                    console.error('[Setup] Download error:', err)
                     cleanup()
                     reject(err)
                 })

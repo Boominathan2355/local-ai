@@ -1106,7 +1106,17 @@ export function registerIpcHandlers(
             downloadService.removeListener('progress', prog)
         }
     })
-    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CANCEL, (_event, id) => {
+    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CANCEL, (_event, id: string) => {
+        console.log(`[IPC] Received DOWNLOAD_CANCEL for: ${id}`)
+        if (id === 'engine' || id === 'binary') {
+            setupManager.cancelDownload('binary')
+        } else if (id.startsWith('model:')) {
+            downloadService.cancelDownload(id)
+        } else {
+            // Try both just in case
+            setupManager.cancelDownload(id)
+            downloadService.cancelDownload(id)
+        }
         return { success: true }
     })
 
