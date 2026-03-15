@@ -92,11 +92,18 @@ export class StorageService extends EventEmitter {
         let diskFreeGB = 0
         let diskTotalGB = 0
         try {
-            const dir = llamaDir ?? os.homedir()
+            const isWin = process.platform === 'win32'
+            const dir = llamaDir ?? (isWin ? process.env.USERPROFILE || 'C:\\' : os.homedir())
             const stats = statfsSync(dir)
-            diskTotalGB = Math.round((stats.blocks * stats.bsize) / (1024 * 1024 * 1024))
-            diskFreeGB = Math.round((stats.bfree * stats.bsize) / (1024 * 1024 * 1024))
-        } catch { /* skip */ }
+            
+            // On Windows, statfsSync might not return blocks/bsize in the same way 
+            // or might fail if not supported by the OS version.
+            // Node 18.0.0+ statfsSync is generally reliable.
+            diskTotalGB = Math.round((Number(stats.blocks) * Number(stats.bsize)) / (1024 * 1024 * 1024))
+            diskFreeGB = Math.round((Number(stats.bfree) * Number(stats.bsize)) / (1024 * 1024 * 1024))
+        } catch (err) { 
+            console.error('[StorageService] Disk space check failed:', err)
+        }
 
         let gpuName: string | undefined
         let gpuMemoryTotalMB: number | undefined
@@ -104,8 +111,14 @@ export class StorageService extends EventEmitter {
 
         if (this.hasNvidiaGpu) {
             try {
-                // Basic NVIDIA detection on Linux
-                const nvidiaOutput = execSync('nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits', {
+                const isWin = process.platform === 'win32'
+                const cmd = isWin 
+                    ? 'nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits'
+                    : 'nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits'
+                
+                // For Windows, we might need to specify the full path if not in PATH
+                // but usually it is added by the installer.
+                const nvidiaOutput = execSync(cmd, {
                     encoding: 'utf-8',
                     timeout: 3000,
                     stdio: ['ignore', 'pipe', 'ignore']
@@ -117,7 +130,9 @@ export class StorageService extends EventEmitter {
                     gpuMemoryTotalMB = parseInt(total)
                     gpuMemoryFreeMB = parseInt(free)
                 }
-            } catch { /* skip if command fails */ }
+            } catch (err) { 
+                console.error('[StorageService] GPU query failed:', err)
+            }
         }
 
         return {
