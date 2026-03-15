@@ -36,11 +36,28 @@ export function registerFileTools(
                 return deleteFileTool(args, fsService, pathValidator)
             case 'list_directory':
                 return listDirectoryTool(args, fsService, pathValidator)
+            case 'create_directory': {
+                const dirPath = args.path
+                if (!dirPath) throw new Error("Missing required argument: 'path'")
+                const validation = await pathValidator.validatePath(dirPath)
+                if (!validation.allowed) throw new Error(`Path validation failed: ${validation.reason}`)
+                await fsService.createDirectory(validation.resolvedPath!)
+                return `Directory created: ${dirPath}`
+            }
+            case 'delete_directory': {
+                const dirPath = args.path
+                if (!dirPath) throw new Error("Missing required argument: 'path'")
+                const validation = await pathValidator.validatePath(dirPath)
+                if (!validation.allowed) throw new Error(`Path validation failed: ${validation.reason}`)
+                // deleteFile handles both files and directories (rmdir for dirs)
+                await fsService.deleteFile(validation.resolvedPath!)
+                return `Directory deleted: ${dirPath}`
+            }
             case 'count_files':
                 return countFilesTool(args, fsService, pathValidator)
             case 'file_details':
                 return fileDetailsTool(args, fsService, pathValidator)
-            case 'rename_file':
+            case 'rename':
                 return renameFileTool(args, fsService, pathValidator)
             case 'copy_file':
                 return copyFileTool(args, fsService, pathValidator)

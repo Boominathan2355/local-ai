@@ -4,7 +4,7 @@ import { getLocalAI } from '../helpers/ipc.helper'
 import type { ChatMessage } from '../types/chat.types'
 import { DEFAULT_SYSTEM_PROMPT } from '../types/settings.types'
 import { parseThinkingProcess } from '../utils/ai-parser'
-import { ToolCategory, ToolPermissionRequest } from '../types/mcp.types'
+import { ToolCategory, ToolPermissionRequest, ToolChainStep } from '../types/mcp.types'
 
 const parseMessages = (msgs: ChatMessage[], supportsThinking: boolean): ChatMessage[] => {
     return msgs.map(m => {
@@ -34,6 +34,7 @@ interface UseChatReturn {
     pendingToolRequest: ToolPermissionRequest | null
     enabledToolCategories: ToolCategory[]
     onCategoriesChange: (categories: ToolCategory[]) => void
+    activeToolChain: ToolChainStep[]
 }
 
 /**
@@ -48,6 +49,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
     const [searchStatus, setSearchStatus] = useState<string | null>(null)
     const [pendingToolRequest, setPendingToolRequest] = useState<ToolPermissionRequest | null>(null)
     const [enabledToolCategories, setEnabledToolCategories] = useState<ToolCategory[]>([])
+    const [activeToolChain, setActiveToolChain] = useState<ToolChainStep[]>([])
 
     const streamingRef = useRef(false)
     const cleanupRef = useRef<Array<() => void>>([])
@@ -61,6 +63,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
         streamingRef.current = false
         setError(null)
         setSearchStatus(null)
+        setActiveToolChain([])
 
         if (!conversationId) {
             setMessages([])
@@ -99,9 +102,34 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
                 // Handle native tool events
                 if (event.type === 'tool_start') {
                     setSearchStatus(`Running tool: ${event.toolName}...`)
+                    
+                    setActiveToolChain(prev => {
+                        const toolName = event.toolName || ''
+                        const exists = prev.some(t => t.toolName === toolName && t.status === 'running')
+                        if (exists) return prev
+                        return [...prev, {
+                            toolName,
+                            args: (event as any).input || {},
+                            status: 'running',
+                            resultSummary: '',
+                            durationMs: 0
+                        }]
+                    })
                     return
                 } else if (event.type === 'tool_end') {
                     setSearchStatus(null)
+
+                    setActiveToolChain(prev => prev.map(t =>
+                        t.toolName === event.toolName && t.status === 'running'
+                            ? {
+                                ...t,
+                                status: 'success',
+                                resultSummary: typeof (event as any).result === 'string'
+                                    ? (event as any).result.slice(0, 200)
+                                    : JSON.stringify((event as any).result || '').slice(0, 200)
+                            }
+                            : t
+                    ))
                     return
                 }
 
@@ -130,6 +158,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
                 setIsStreaming(false)
                 setIsThinking(false)
                 setStreamingContent('')
+                // Note: We purposefully do NOT clear activeToolChain here so it remains visible after completion until the next message
 
                 // Reload messages to get the saved assistant message
                 api.conversations.getMessages(conversationId!).then((msgs) => {
@@ -219,6 +248,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
             setIsThinking(false)
             setStreamingContent('')
             setSearchStatus(null)
+            setActiveToolChain([])
 
             const optimisticId = retryId || `temp-${Date.now()}`
             const optimisticMessage: ChatMessage = {
@@ -367,6 +397,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
         denyTool,
         pendingToolRequest,
         enabledToolCategories,
-        onCategoriesChange
+        onCategoriesChange,
+        activeToolChain
     }
 }

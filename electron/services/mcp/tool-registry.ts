@@ -293,14 +293,14 @@ export class ToolRegistry {
         this.registerTool({
             name: 'create_document',
             category: 'document_creator',
-            description: 'Create a rich document (PDF, Word, Excel, PowerPoint, Markdown, HTML, CSV, TXT)',
+            description: 'Create documents in various formats: PDF, DOCX, XLSX, PPTX, CSV, Markdown, HTML, TXT. Use this tool to generate reports, summaries, and structured documents. Specify the desired format in the "format" parameter.',
             permissionLevel: 'write',
             maxExecutionTimeMs: 30_000,
             enabled: true,
             parameterSchema: {
-                path: { type: 'string', description: 'The absolute file path where the document should be saved' },
-                format: { type: 'string', description: 'The document format (e.g. pdf, docx, xlsx, pptx, md, html, csv, txt)' },
-                options: { type: 'object', description: 'Document content and styling options' }
+                path: { type: 'string', description: 'The absolute file path where the document should be saved (e.g. /home/user/report.pdf)' },
+                format: { type: 'string', description: 'Output format: pdf, docx, xlsx, pptx, csv, md, html, or txt' },
+                options: { type: 'object', description: 'Document content and styling. Must include "title" (string) and "content" (string, Markdown format). Optional: "author", "subject", "margins", "fontSize".' }
             }
         })
     }

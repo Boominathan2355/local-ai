@@ -24,6 +24,7 @@ import { MarkdownRenderer } from './MarkdownRenderer'
 import { ReasoningBlock } from './ReasoningBlock'
 import { parseThinkingProcess } from '../../utils/ai-parser'
 import { ToolPermissionCard } from '../mcp/ToolPermissionCard'
+import { ToolCallCard } from '../mcp/ToolCallCard'
 import type { ChatMessage } from '../../types/chat.types'
 import type { AppSettings } from '../../types/settings.types'
 import type { ToolCategory, ToolPermissionRequest } from '../../types/mcp.types'
@@ -62,6 +63,7 @@ interface ChatWindowProps {
     onDenyTool: (requestId: string) => void
     enabledToolCategories?: ToolCategory[]
     onCategoriesChange?: (categories: ToolCategory[]) => void
+    activeToolChain?: any[]
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -90,7 +92,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     onApproveTool,
     onDenyTool,
     enabledToolCategories,
-    onCategoriesChange
+    onCategoriesChange,
+    activeToolChain
 }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -290,35 +293,20 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                         ))}
 
                         {/* Streaming assistant message */}
-                        {isStreaming && (streamingContent || isThinking) && (
-                            <div className="message message--assistant message--streaming" id="streaming-message">
-                                <div className="message__wrapper">
-                                    <div className="message__avatar message__avatar--assistant">
-                                        <Bot size={16} />
-                                    </div>
-                                    <div className="message__flat">
-                                        <div className="message__content message__content--markdown">
-                                            {(() => {
-                                                const parsed = parseThinkingProcess(streamingContent);
-                                                return (
-                                                    <>
-                                                        {(parsed.reasoningContent || parsed.isThinking || isThinking) && (
-                                                            <ReasoningBlock
-                                                                reasoningContent={parsed.reasoningContent || (isThinking ? streamingContent.replace(/<think>|<\/think>/g, '') : '')}
-                                                                isThinking={parsed.isThinking || isThinking}
-                                                            />
-                                                        )}
-                                                        {parsed.content && (
-                                                            <MarkdownRenderer content={parsed.content} />
-                                                        )}
-                                                    </>
-                                                );
-                                            })()}
-                                        </div>
-                                        <StreamingIndicator />
-                                    </div>
-                                </div>
-                            </div>
+                        {isStreaming && (streamingContent || isThinking || (activeToolChain && activeToolChain.length > 0)) && (
+                            <MessageBubble
+                                message={{
+                                    id: 'streaming',
+                                    role: 'assistant',
+                                    content: streamingContent,
+                                    createdAt: Date.now(),
+                                    conversationId: '',
+                                    tokenCount: 0,
+                                    isThinking: isThinking
+                                }}
+                                toolChain={activeToolChain}
+                                isStreaming={isStreaming}
+                            />
                         )}
 
                         {/* Streaming but no content yet */}

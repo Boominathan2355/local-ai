@@ -21,6 +21,10 @@ import type { Conversation } from '../../src/types/conversation.types'
 
 
 
+import { FileSystemService } from '../services/filesystem.service'
+import { PathValidator } from '../services/mcp/path-validator'
+import { registerDocumentTools } from '../services/mcp/document-tools/index'
+
 const CHARS_PER_TOKEN = 4
 
 const WEB_SEARCH_TOOL = {
@@ -656,6 +660,21 @@ export function registerIpcHandlers(
                     console.log(`[Chat] Native tool calling: ${tools?.length ?? 0} tools provided to model`)
                 }
 
+                // When building tools[] for llama.cpp, if terminal category is requested
+                // but all terminal tools are disabled, send a system note:
+                const terminalRequested = enabledToolCategories.includes('terminal')
+                const terminalToolsEnabled = tools?.some(t => {
+                    const def = toolController.registry.getTool(t.function.name)
+                    return def?.category === 'terminal' && def?.enabled
+                })
+
+                if (terminalRequested && !terminalToolsEnabled) {
+                    // Inject into system prompt so model knows why
+                    systemPrompt += '\n\nNote: Terminal tools are currently disabled. ' +
+                        'The user must enable them in MCP Tool Center → Tool Catalog before ' +
+                        'you can run commands.'
+                }
+
                 const settings = storage.getSettings()
                 const allowedPaths = [
                     process.env.HOME || '/',
@@ -700,7 +719,12 @@ export function registerIpcHandlers(
                     ])
                 }
                 const executeTerminalTool = async (name: string, args: any) => await toolSvc.runCommand(args.command, args.cwd)
-                const executeDocumentTool = async (name: string, args: any) => await toolSvc.createFile(args.file_path ?? args.path, args.content) // Simplified mapping
+                const docValidator = new PathValidator(allowedPaths)
+                const docFs = new FileSystemService()
+                const executeDocumentTool = registerDocumentTools(toolController, docFs, docValidator)
+                const executeWebSearch = async (_name: string, _args: any) => {
+                    throw new Error('web_search should be handled before tool execution')
+                }
                 const executeFileTool = async (name: string, args: any) => {
                     if (name === 'list_directory') return await toolSvc.listDirectory(args.dir_path ?? args.path)
                     if (name === 'create_directory') return await toolSvc.createDirectory(args.dir_path ?? args.path)
@@ -779,7 +803,8 @@ export function registerIpcHandlers(
                             win.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, {
                                 conversationId,
                                 type: 'tool_start',
-                                toolName: tc.function.name
+                                toolName: tc.function.name,
+                                input: sanitizeToolArguments(tc.function.arguments)
                             })
 
                             let toolResultContent: string
@@ -795,9 +820,20 @@ export function registerIpcHandlers(
                                     parsed,
                                     conversationId,
                                     async (name: string, args: Record<string, any>) => {
-                                        if (name.startsWith('run_command'))     return executeTerminalTool(name, args)
-                                        if (name.startsWith('create_document')) return executeDocumentTool(name, args)
-                                        return executeFileTool(name, args)
+                                        const toolDef = toolController.registry.getTool(name)
+                                        const category = toolDef?.category
+
+                                        if (name === 'web_search')           return executeWebSearch(name, args)
+                                        if (category === 'terminal')         return executeTerminalTool(name, args)
+                                        if (category === 'document_creator') return executeDocumentTool(name, args)
+                                        if (category === 'file_control')     return executeFileTool(name, args)
+
+                                        // Fallback — try each executor and return first success
+                                        console.warn(`[MCP] Unknown tool category for "${name}", trying all executors`)
+                                        try { return await executeFileTool(name, args) } catch {}
+                                        try { return await executeDocumentTool(name, args) } catch {}
+                                        try { return await executeTerminalTool(name, args) } catch {}
+                                        throw new Error(`No executor found for tool: ${name}`)
                                     }
                                 )
 
@@ -858,9 +894,19 @@ export function registerIpcHandlers(
                                                     retryParsed,
                                                     conversationId,
                                                     async (name: string, args: Record<string, any>) => {
-                                                        if (name.startsWith('run_command'))     return executeTerminalTool(name, args)
-                                                        if (name.startsWith('create_document')) return executeDocumentTool(name, args)
-                                                        return executeFileTool(name, args)
+                                                        const toolDef = toolController.registry.getTool(name)
+                                                        const category = toolDef?.category
+
+                                                        if (name === 'web_search')           return executeWebSearch(name, args)
+                                                        if (category === 'terminal')         return executeTerminalTool(name, args)
+                                                        if (category === 'document_creator') return executeDocumentTool(name, args)
+                                                        if (category === 'file_control')     return executeFileTool(name, args)
+
+                                                        console.warn(`[MCP] Unknown tool category for "${name}", trying all executors`)
+                                                        try { return await executeFileTool(name, args) } catch {}
+                                                        try { return await executeDocumentTool(name, args) } catch {}
+                                                        try { return await executeTerminalTool(name, args) } catch {}
+                                                        throw new Error(`No executor found for tool: ${name}`)
                                                     }
                                                 )
                                             } catch (retryErr: any) {

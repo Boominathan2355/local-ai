@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { StreamingIndicator } from './StreamingIndicator'
 import type { ChatMessage } from '../../types/chat.types'
 import { ReasoningBlock } from './ReasoningBlock'
 import { parseMCPContent, MCPContentSegment } from '../../utils/ai-parser'
@@ -29,6 +30,8 @@ interface MessageBubbleProps {
     isLast?: boolean
     allMessages?: ChatMessage[]
     onSwitchVersion?: (messageId: string) => void
+    toolChain?: any[]
+    isStreaming?: boolean
 }
 
 interface DataCardProps {
@@ -51,7 +54,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     onReply,
     isLast,
     allMessages = [],
-    onSwitchVersion
+    onSwitchVersion,
+    toolChain = [],
+    isStreaming = false
 }) => {
     const isUser = message.role === 'user'
     const [copied, setCopied] = useState(false)
@@ -153,6 +158,21 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         </div>
                     ) : (
                         <div className="message__content">
+                            {toolChain && toolChain.length > 0 && (
+                                <div className="tool-chain-container mb-2">
+                                    {toolChain.map((step, i) => (
+                                        <ToolCallCard
+                                            key={`${step.toolName}-${i}`}
+                                            toolName={step.toolName}
+                                            args={step.args}
+                                            status={step.status === 'running' ? 'calling' : step.status}
+                                            result={step.resultSummary}
+                                            durationMs={step.durationMs}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+
                             {message.reasoningContent && (
                                 <ReasoningBlock
                                     reasoningContent={message.reasoningContent}
@@ -220,6 +240,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     return null
                                 })
                             })()}
+                            {isStreaming && <StreamingIndicator />}
                         </div>
                     )}
 
