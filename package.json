@@ -1,6 +1,7 @@
 {
   "name": "local-ai-assistant",
   "version": "1.0.0",
+  "private": true,
   "description": "Fully offline desktop AI assistant powered by llama.cpp",
   "main": "./out/main/index.js",
   "homepage": "https://github.com/local-ai-assistant",
