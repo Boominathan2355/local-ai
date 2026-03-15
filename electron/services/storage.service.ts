@@ -181,6 +181,18 @@ export class StorageService extends EventEmitter {
         }
     }
 
+    updateConversation(id: string, data: Partial<Conversation>): void {
+        const index = this.data.conversations.findIndex((c) => c.id === id)
+        if (index !== -1) {
+            this.data.conversations[index] = {
+                ...this.data.conversations[index],
+                ...data,
+                updatedAt: Date.now()
+            }
+            this.save()
+        }
+    }
+
     deleteConversation(id: string): void {
         this.data.conversations = this.data.conversations.filter((c) => c.id !== id)
         delete this.data.messages[id]

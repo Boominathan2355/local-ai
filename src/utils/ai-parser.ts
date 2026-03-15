@@ -4,6 +4,11 @@ export interface ParsedModelOutput {
     isThinking: boolean
 }
 
+export type MCPContentSegment =
+    | { type: 'text'; content: string }
+    | { type: 'tool_call'; toolName: string; args: Record<string, any>; raw: string }
+    | { type: 'tool_result'; toolName: string; content: string; success: boolean }
+
 /**
  * Parses the raw text output from a model to extract content within <think> or [THOUGHT] tags.
  * Iteratively collects all distinct reasoning blocks and merges them.
@@ -96,4 +101,68 @@ export function parseThinkingProcess(text: string): ParsedModelOutput {
         reasoningContent: totalReasoning.trim(),
         isThinking: isCurrentlyThinking
     }
+}
+
+/**
+ * Splits content into text segments and tool call segments.
+ * Pattern: <tool_call>NAME|{JSON}</tool_call>
+ */
+export function parseMCPContent(text: string): MCPContentSegment[] {
+    if (!text) return []
+
+    // 1. Detect Tool Results (usually in user role messages but can be in stream)
+    const toolResultRegex = /^\[TOOL_RESULT: ([^\]]+)\]\n([\s\S]*)$/
+    const resultMatch = text.match(toolResultRegex)
+    if (resultMatch) {
+        const toolName = resultMatch[1]
+        const content = resultMatch[2]
+        const isSuccess = !content.startsWith('Error:')
+        return [{
+            type: 'tool_result',
+            toolName,
+            content: isSuccess ? content.replace(/^Success: true\nContent: /, '') : content,
+            success: isSuccess
+        }]
+    }
+
+    // 2. Detect Tool Calls in assistant output
+    const segments: MCPContentSegment[] = []
+    const toolCallRegex = /<tool_call>([^|]+)\|([^<]+)<\/tool_call>/g
+
+    let lastIndex = 0
+    let match
+
+    while ((match = toolCallRegex.exec(text)) !== null) {
+        // Add text before the tool call
+        const textBefore = text.substring(lastIndex, match.index)
+        if (textBefore.trim()) {
+            segments.push({ type: 'text', content: textBefore })
+        }
+
+        const toolName = match[1]
+        const argsStr = match[2]
+        let args = {}
+        try {
+            args = JSON.parse(argsStr)
+        } catch (e) {
+            console.error('Failed to parse tool arguments:', argsStr)
+        }
+
+        segments.push({
+            type: 'tool_call',
+            toolName,
+            args,
+            raw: match[0]
+        })
+
+        lastIndex = toolCallRegex.lastIndex
+    }
+
+    // Add remaining text
+    const remainingText = text.substring(lastIndex)
+    if (remainingText.trim()) {
+        segments.push({ type: 'text', content: remainingText })
+    }
+
+    return segments
 }

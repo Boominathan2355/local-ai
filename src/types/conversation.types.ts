@@ -4,6 +4,7 @@ export interface Conversation {
     createdAt: number
     updatedAt: number
     messageCount: number
+    enabledToolCategories?: string[]
     isGenerating?: boolean
 }
 

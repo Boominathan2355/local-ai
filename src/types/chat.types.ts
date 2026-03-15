@@ -48,4 +48,8 @@ export type StreamTokenEvent = {
     conversationId: string
     token: string
     done: boolean
+    type?: 'token' | 'tool_start' | 'tool_end'
+    toolName?: string
+    toolCallId?: string
+    args?: any
 }

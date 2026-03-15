@@ -6,17 +6,29 @@ import type { StreamTokenEvent } from '../../src/types/chat.types'
 import type { Conversation } from '../../src/types/conversation.types'
 import type { ChatMessage } from '../../src/types/chat.types'
 import type { ModelStatus } from '../../src/types/model.types'
+import type { ToolPermissionRequest } from '../../src/types/mcp.types'
 
 export interface LocalAIApi {
     chat: {
-        sendMessage: (conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean, retryId?: string, quotedMessageId?: string, quotedMessageText?: string) => Promise<{ success?: boolean; error?: string }>
+        sendMessage: (
+            conversationId: string,
+            content: string,
+            systemPrompt: string,
+            images?: string[],
+            searchEnabled?: boolean,
+            retryId?: string,
+            quotedMessageId?: string,
+            quotedMessageText?: string,
+            isAgentMode?: boolean,
+            enabledToolCategories?: string[]
+        ) => Promise<{ success?: boolean; error?: string }>
         stopGeneration: () => Promise<{ success: boolean }>
         onStreamToken: (callback: (event: StreamTokenEvent) => void) => () => void
         onStreamComplete: (callback: (data: { conversationId: string }) => void) => () => void
         onStreamError: (callback: (data: { conversationId: string; error: string }) => void) => () => void
         onSearchStatus: (callback: (data: { conversationId: string; status: string }) => void) => () => void
-        onToolPermissionRequest: (callback: (data: { requestId: string; toolName: string; args: any; conversationId: string }) => void) => () => void
-        sendToolPermissionResponse: (requestId: string, approved: boolean) => void
+        onToolPermissionRequest: (callback: (data: ToolPermissionRequest) => void) => () => void
+        sendToolPermissionResponse: (requestId: string, approved: boolean, always?: boolean) => void
         switchVersion: (conversationId: string, messageId: string) => Promise<{ success: boolean }>
     }
     conversations: {
@@ -25,6 +37,7 @@ export interface LocalAIApi {
         delete: (id: string) => Promise<{ success: boolean }>
         getMessages: (conversationId: string) => Promise<ChatMessage[]>
         updateTitle: (id: string, title: string) => Promise<{ success: boolean }>
+        update: (id: string, data: Partial<Conversation>) => Promise<{ success: boolean }>
         onMessagesUpdated: (callback: (data: { conversationId: string; message?: ChatMessage }) => void) => () => void
     }
     model: {
@@ -55,6 +68,7 @@ export interface LocalAIApi {
             gpuMemoryTotalMB?: number
             gpuMemoryFreeMB?: number
         }>
+        selectDirectory: () => Promise<string | null>
     }
     download: {
         getModels: (options?: { includeCloud?: boolean }) => Promise<Array<{ id: string; name: string; description: string; sizeGB: number; ramRequired: number; tier: string; filename: string; downloaded: boolean }>>
@@ -75,6 +89,14 @@ export interface LocalAIApi {
         onComplete: (callback: (data: { id: string; path: string }) => void) => () => void
         onError: (callback: (data: { id: string; error: string }) => void) => () => void
     }
+    mcp: {
+        executeTool: (toolName: string, args: any) => Promise<any>
+        getStats: () => Promise<any>
+        getLogs: () => Promise<any>
+        clearLogs: () => Promise<{ success: boolean }>
+        getTools: () => Promise<Array<{ name: string; category: string; description: string; enabled: boolean; permissionLevel: string }>>
+        setToolEnabled: (toolName: string, enabled: boolean) => Promise<{ success: boolean; toolName: string; enabled: boolean }>
+    }
     onSettingsChanged: (callback: (settings: AppSettings) => void) => () => void
 }
 
@@ -91,8 +113,8 @@ function createListener<T>(channel: string, callback: (data: T) => void): () => 
 
 const api: LocalAIApi = {
     chat: {
-        sendMessage: (conversationId, content, systemPrompt, images, searchEnabled, retryId, quotedMessageId, quotedMessageText) =>
-            ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND_MESSAGE, conversationId, content, systemPrompt, images, searchEnabled, retryId, quotedMessageId, quotedMessageText),
+        sendMessage: (conversationId, content, systemPrompt, images, searchEnabled, retryId, quotedMessageId, quotedMessageText, isAgentMode, enabledToolCategories) =>
+            ipcRenderer.invoke(IPC_CHANNELS.CHAT_SEND_MESSAGE, conversationId, content, systemPrompt, images, searchEnabled, retryId, quotedMessageId, quotedMessageText, isAgentMode, enabledToolCategories),
         stopGeneration: () =>
             ipcRenderer.invoke(IPC_CHANNELS.CHAT_STOP_GENERATION),
         onStreamToken: (callback) =>
@@ -105,8 +127,8 @@ const api: LocalAIApi = {
             createListener(IPC_CHANNELS.CHAT_SEARCH_STATUS, callback),
         onToolPermissionRequest: (callback) =>
             createListener(IPC_CHANNELS.CHAT_TOOL_PERMISSIONS_REQUEST, callback),
-        sendToolPermissionResponse: (requestId, approved) =>
-            ipcRenderer.send(IPC_CHANNELS.CHAT_TOOL_PERMISSIONS_RESPONSE, { requestId, approved }),
+        sendToolPermissionResponse: (requestId, approved, always) =>
+            ipcRenderer.send(IPC_CHANNELS.CHAT_TOOL_PERMISSIONS_RESPONSE, { requestId, approved, always }),
         switchVersion: (conversationId, messageId) =>
             ipcRenderer.invoke(IPC_CHANNELS.CHAT_SWITCH_VERSION, conversationId, messageId)
     },
@@ -118,6 +140,8 @@ const api: LocalAIApi = {
             ipcRenderer.invoke(IPC_CHANNELS.CONVERSATION_GET_MESSAGES, conversationId),
         updateTitle: (id, title) =>
             ipcRenderer.invoke(IPC_CHANNELS.CONVERSATION_UPDATE_TITLE, id, title),
+        update: (id, data) =>
+            ipcRenderer.invoke(IPC_CHANNELS.CONVERSATION_UPDATE, id, data),
         onMessagesUpdated: (callback) =>
             createListener(IPC_CHANNELS.CONVERSATION_MESSAGES_UPDATED, callback)
     },
@@ -139,7 +163,8 @@ const api: LocalAIApi = {
         importData: (jsonString) => ipcRenderer.invoke(IPC_CHANNELS.STORAGE_IMPORT, jsonString)
     },
     system: {
-        getInfo: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_INFO)
+        getInfo: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_GET_INFO),
+        selectDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_SELECT_DIRECTORY)
     },
     download: {
         getModels: (options) => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_GET_MODELS, options),
@@ -159,6 +184,15 @@ const api: LocalAIApi = {
         onProgress: (callback) => createListener(IPC_CHANNELS.SETUP_PROGRESS, callback),
         onComplete: (callback) => createListener(IPC_CHANNELS.SETUP_COMPLETE, callback),
         onError: (callback) => createListener(IPC_CHANNELS.SETUP_ERROR, callback)
+    },
+    mcp: {
+        executeTool: (toolName, args) => ipcRenderer.invoke(IPC_CHANNELS.MCP_TOOL_EXECUTE, toolName, args),
+        getStats: () => ipcRenderer.invoke(IPC_CHANNELS.MCP_GET_STATS),
+        getLogs: () => ipcRenderer.invoke(IPC_CHANNELS.MCP_GET_LOGS),
+        clearLogs: () => ipcRenderer.invoke(IPC_CHANNELS.MCP_CLEAR_LOGS),
+        getTools: () => ipcRenderer.invoke(IPC_CHANNELS.MCP_GET_TOOLS),
+        setToolEnabled: (toolName: string, enabled: boolean) =>
+            ipcRenderer.invoke(IPC_CHANNELS.MCP_SET_TOOL_ENABLED, toolName, enabled)
     },
     onSettingsChanged: (callback) =>
         createListener(IPC_CHANNELS.SETTINGS_CHANGED, callback)

@@ -65,7 +65,9 @@ const App: React.FC = () => {
         switchVersion,
         approveTool,
         denyTool,
-        pendingToolRequest
+        pendingToolRequest,
+        enabledToolCategories,
+        onCategoriesChange
     } = useChat(activeConversationId, supportsThinking)
 
     // Apply theme to document root
@@ -133,10 +135,14 @@ const App: React.FC = () => {
                 setActiveModelName((result as any).activeModelName)
             }
             if ((result as any).activeModelTier) {
-                setActiveModelTier((result as any).activeModelTier)
+                const tier = (result as any).activeModelTier
+                setActiveModelTier(tier)
+                if (tier === 'agent') {
+                    onCategoriesChange(['file_control', 'document_creator', 'web_search'])
+                }
             }
         })
-    }, [])
+    }, [onCategoriesChange])
 
     const handleSendMessage = (content: string, images?: string[], searchEnabled?: boolean, retryId?: string, quotedMessageId?: string, quotedMessageText?: string): void => {
         const options = {
@@ -144,15 +150,19 @@ const App: React.FC = () => {
             images,
             searchEnabled,
             quotedMessageId,
-            quotedMessageText
+            quotedMessageText,
+            isAgentMode: activeModelTier === 'agent'
         }
 
         if (!activeConversationId) {
             const api = getLocalAI()
             if (api) {
                 api.conversations.create().then((conversation) => {
-                    selectConversation(conversation.id)
-                    setTimeout(() => sendMessage(content, options, retryId), 50)
+                    // Persist current tool selection into the new conversation
+                    api.conversations.update(conversation.id, { enabledToolCategories }).then(() => {
+                        selectConversation(conversation.id)
+                        setTimeout(() => sendMessage(content, options, retryId), 50)
+                    })
                 })
             }
             return
@@ -215,6 +225,8 @@ const App: React.FC = () => {
                 pendingToolRequest={pendingToolRequest}
                 onApproveTool={approveTool}
                 onDenyTool={denyTool}
+                enabledToolCategories={enabledToolCategories}
+                onCategoriesChange={onCategoriesChange}
             />
 
             <SettingsPanel

@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { Paperclip, Globe, Send, Square, X } from 'lucide-react'
 import type { ChatMessage } from '../../types/chat.types'
+import { ChatToolBar } from '../mcp/ChatToolBar'
+import { ToolCategory } from '../../types/mcp.types'
 
 interface MessageInputProps {
     onSend: (content: string, images?: string[], searchEnabled?: boolean) => void
@@ -12,6 +14,8 @@ interface MessageInputProps {
     quotedMessage?: ChatMessage | null
     quotedText?: string | null
     onCancelQuote?: () => void
+    enabledToolCategories?: ToolCategory[]
+    onCategoriesChange?: (categories: ToolCategory[]) => void
 }
 
 export const MessageInput: React.FC<MessageInputProps> = ({
@@ -23,11 +27,13 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     supportsVision = false,
     quotedMessage,
     quotedText,
-    onCancelQuote
+    onCancelQuote,
+    enabledToolCategories = [],
+    onCategoriesChange
 }) => {
     const [value, setValue] = useState('')
     const [images, setImages] = useState<string[]>([])
-    const [isSearchEnabled, setIsSearchEnabled] = useState(false)
+    const isSearchEnabled = enabledToolCategories.includes('web_search')
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -137,6 +143,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                     </div>
                 )}
 
+
                 <div className="chat__input-wrapper">
                     <textarea
                         ref={textareaRef}
@@ -164,11 +171,26 @@ export const MessageInput: React.FC<MessageInputProps> = ({
                         <div className="chat__tool-divider"></div>
                         <button
                             className={`chat__web-search ${isSearchEnabled ? 'chat__web-search--active' : ''}`}
-                            onClick={() => setIsSearchEnabled(!isSearchEnabled)}
+                            onClick={() => {
+                                if (onCategoriesChange) {
+                                    if (isSearchEnabled) {
+                                        onCategoriesChange(enabledToolCategories.filter(c => c !== 'web_search'))
+                                    } else {
+                                        onCategoriesChange([...enabledToolCategories, 'web_search'])
+                                    }
+                                }
+                            }}
                         >
                             <Globe size={14} className="chat__web-search-icon" />
                             <span>Web Search</span>
                         </button>
+                        <div className="chat__tool-divider"></div>
+                        {isAgentMode && onCategoriesChange && (
+                            <ChatToolBar
+                                enabledCategories={enabledToolCategories}
+                                onCategoriesChange={onCategoriesChange}
+                            />
+                        )}
                     </div>
 
                     <div className="chat__input-tools-right">

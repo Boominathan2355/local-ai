@@ -10,7 +10,7 @@ const DEFAULT_CONFIG = {
     port: 8080,
     host: '127.0.0.1',
     threads: 6,
-    contextSize: 2048,
+    contextSize: 8192,
     gpuLayers: 0,
     maxRestartAttempts: 3,
     healthCheckIntervalMs: 5000,
