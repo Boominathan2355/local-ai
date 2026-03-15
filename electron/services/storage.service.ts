@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import path from 'path'
 import os from 'os'
 import { execSync } from 'child_process'
+import { statfsSync } from 'fs'
 import { EventEmitter } from 'events'
 
 import type { Conversation } from '../../src/types/conversation.types'
@@ -92,10 +93,9 @@ export class StorageService extends EventEmitter {
         let diskTotalGB = 0
         try {
             const dir = llamaDir ?? os.homedir()
-            const output = execSync(`df -BG "${dir}" | tail -1 | awk '{print $2 " " $4}'`, { encoding: 'utf-8', timeout: 3000 }).trim()
-            const [total, free] = output.split(/\s+/).map(v => parseFloat(v.replace('G', '')) || 0)
-            diskTotalGB = total
-            diskFreeGB = free
+            const stats = statfsSync(dir)
+            diskTotalGB = Math.round((stats.blocks * stats.bsize) / (1024 * 1024 * 1024))
+            diskFreeGB = Math.round((stats.bfree * stats.bsize) / (1024 * 1024 * 1024))
         } catch { /* skip */ }
 
         let gpuName: string | undefined
