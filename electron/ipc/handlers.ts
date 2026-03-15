@@ -1,5 +1,6 @@
 import { ipcMain, BrowserWindow, app } from 'electron'
 import path from 'path'
+import os from 'os'
 import http from 'http'
 import https from 'https'
 import { URL } from 'url'
@@ -675,9 +676,8 @@ export function registerIpcHandlers(
                         'you can run commands.'
                 }
 
-                const settings = storage.getSettings()
                 const allowedPaths = [
-                    process.env.HOME || '/',
+                    os.homedir(),
                     app.getPath('userData'),
                     ...(settings.mcpAllowedPaths || [])
                 ]
@@ -845,23 +845,52 @@ export function registerIpcHandlers(
                                 ) {
                                     const requestedPath = toolResult.args.path as string
                                     // Determine the directory to add (if file path, use its parent dir)
-                                    const dirToAdd = requestedPath.endsWith('/')
-                                        ? requestedPath
-                                        : path.dirname(requestedPath)
+                                    // Use path.extname to detect files vs directories — works on all platforms
+                                    // A path with no extension is likely a directory; one with extension is a file
+                                    const hasExtension = path.extname(requestedPath).length > 0
+                                    const dirToAdd = hasExtension
+                                        ? path.dirname(requestedPath)
+                                        : requestedPath
 
                                     // Sensitive path patterns — never allow these to reach the approval dialog
                                     const SENSITIVE_PATH_PATTERNS = [
+                                        // Unix — system files
                                         /\/etc\/(?:passwd|shadow|sudoers|hosts|ssh)/i,
+                                        /\/proc\//i,
+                                        /\/sys\//i,
+                                        /\/dev\//i,
+
+                                        // Unix — credentials and keys
                                         /[\/\\]\.ssh[\/\\]/i,
                                         /[\/\\]\.gnupg[\/\\]/i,
                                         /[\/\\]\.aws[\/\\]/i,
                                         /[\/\\]\.config[\/\\](?:google-chrome|chromium|mozilla)/i,
-                                        /\/proc\//i,
-                                        /\/sys\//i,
-                                        /\/dev\//i,
-                                        /[\/\\]AppData[\/\\]Roaming[\/\\](?:Microsoft|Google|Mozilla)/i,
+
+                                        // Unix — browser profiles
+                                        /[\/\\]\.mozilla[\/\\]/i,
+
+                                        // Unix — macOS sensitive
                                         /[\/\\]Library[\/\\]Keychains/i,
                                         /[\/\\]Library[\/\\]Application Support[\/\\](?:Google|Mozilla)/i,
+
+                                        // Windows — system directories
+                                        /[a-zA-Z]:[\/\\]Windows[\/\\]System32/i,
+                                        /[a-zA-Z]:[\/\\]Windows[\/\\]SysWOW64/i,
+                                        /[a-zA-Z]:[\/\\]Windows[\/\\]System/i,
+
+                                        // Windows — credential stores
+                                        /[\/\\]AppData[\/\\]Roaming[\/\\]Microsoft[\/\\](?:Credentials|Protect|Vault)/i,
+                                        /[\/\\]AppData[\/\\]Local[\/\\]Microsoft[\/\\](?:Credentials|Vault)/i,
+
+                                        // Windows — browser credentials
+                                        /[\/\\]AppData[\/\\](?:Local|Roaming)[\/\\](?:Google|Mozilla|Microsoft)[\/\\]/i,
+
+                                        // Windows — SSH keys
+                                        /[\/\\]\.ssh[\/\\]/i,
+                                        /[\/\\]OpenSSH[\/\\]/i,
+
+                                        // Windows — registry hives (if somehow path-accessed)
+                                        /[a-zA-Z]:[\/\\]Windows[\/\\]System32[\/\\]config[\/\\](?:SAM|SYSTEM|SECURITY)/i,
                                     ]
 
                                     const isSensitivePath = SENSITIVE_PATH_PATTERNS.some(pattern =>

@@ -8,12 +8,58 @@ const execAsync = promisify(exec)
 // Commands that are intrinsically dangerous and should be blocked completely
 // at the executor level, regardless of user approval.
 const BLOCKED_COMMANDS = [
+    // Unix destructive
     'rm -rf /',
+    'rm -rf ~',
     'mkfs',
     'dd if=',
-    'chmod -R 777 /',
-    '> /dev/sda'
+    ':(){:|:&};:',      // fork bomb
+    '> /dev/sda',
+    'shred',
+
+    // Unix privilege escalation
+    'chmod 777 /',
+    'chown root',
+    'sudo rm',
+    'sudo mkfs',
+
+    // Windows destructive
+    'format c:',
+    'format C:',
+    'del /s /q c:\\',
+    'del /s /q C:\\',
+    'rd /s /q c:\\',
+    'rd /s /q C:\\',
+    'rmdir /s /q c:\\',
+    'cipher /w:c',      // wipes free space
+
+    // Windows privilege / system
+    'net user administrator',
+    'net localgroup administrators',
+    'bcdedit',          // boot config
+    'diskpart',         // disk partitioning
+    'sfc /scannow',     // system file checker (not destructive but dangerous to block)
+    'reg delete hklm',
+    'reg delete HKLM',
+    'takeown /f c:\\',
+    'icacls c:\\ /grant',
+
+    // Cross-platform dangerous
+    'curl | sh',
+    'curl | bash',
+    'wget | sh',
+    'wget | bash',
+    'eval ',
+    'base64 -d |',
 ]
+
+// Match logic — check if command contains any blocked pattern (case-insensitive)
+const isBlocked = (cmd: string): boolean => {
+    const normalized = cmd.toLowerCase().trim()
+    return BLOCKED_COMMANDS.some(blocked =>
+        normalized.includes(blocked.toLowerCase())
+    )
+}
 
 export async function runCommandTool(
     args: Record<string, any>,
@@ -23,10 +69,8 @@ export async function runCommandTool(
     if (!command) throw new Error("Missing required argument: 'command'")
 
     // Additional hardcoded security checks
-    for (const blocked of BLOCKED_COMMANDS) {
-        if (command.includes(blocked)) {
-            throw new Error(`Command blocked for safety: Contains forbidden pattern '${blocked}'`)
-        }
+    if (isBlocked(command)) {
+        throw new Error('Command blocked for safety: Contains forbidden pattern')
     }
 
     // Determine the working directory
