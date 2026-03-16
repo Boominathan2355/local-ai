@@ -117,17 +117,22 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
         })
 
         const cleanupComplete = api.download.onComplete(() => {
+            console.log('[ModelSetup] Model download complete event received')
             setIsDownloading(false)
             setProgress(null)
 
-            // Refresh status
+            // Refresh status immediately to advance step
             api.setup.getStatus().then((s) => {
+                console.log('[ModelSetup] Status refreshed after model download:', s)
                 setStatus(s)
                 if (s.hasBinary && s.hasModel) {
                     setCurrentStep('done')
                 } else if (s.hasBinary) {
                     setCurrentStep('model')
                 }
+            }).catch(err => {
+                console.error('[ModelSetup] Failed to refresh status after model download:', err)
+                // Fallback: stay in model step but allow user to try "Use This Model"
             })
         })
 
@@ -142,15 +147,20 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
         })
 
         const cleanupSetupComplete = api.setup.onComplete(() => {
+            console.log('[ModelSetup] Engine installation complete event received')
             setIsDownloading(false)
             setProgress(null)
+            
             api.setup.getStatus().then((s) => {
+                console.log('[ModelSetup] Status refreshed after engine install:', s)
                 setStatus(s)
                 if (s.hasBinary && s.hasModel) {
                     setCurrentStep('done')
                 } else if (s.hasBinary) {
                     setCurrentStep('model')
                 }
+            }).catch(err => {
+                console.error('[ModelSetup] Failed to refresh status after engine install:', err)
             })
         })
 

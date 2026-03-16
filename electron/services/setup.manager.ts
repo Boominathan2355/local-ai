@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events'
-import { existsSync, mkdirSync, createWriteStream, unlinkSync, renameSync, chmodSync } from 'fs'
+import { existsSync, mkdirSync, createWriteStream, unlinkSync, renameSync, chmodSync, readdirSync, statSync } from 'fs'
 import path from 'path'
 import http from 'http'
 import https from 'https'
@@ -46,14 +46,39 @@ export class SetupManager extends EventEmitter {
         super()
         this.llamaDir = llamaBasePath
         this.downloadService = downloadService
-        
+
         if (!existsSync(this.llamaDir)) {
             mkdirSync(this.llamaDir, { recursive: true })
         }
     }
 
     getBinaryPath(): string {
-        return path.join(this.llamaDir, BINARY_FILENAME)
+        // First check standard bin location
+        const standardPath = path.join(this.llamaDir, 'bin', BINARY_FILENAME)
+        if (existsSync(standardPath)) return standardPath
+
+        // Then check legacy root location
+        const legacyPath = path.join(this.llamaDir, BINARY_FILENAME)
+        if (existsSync(legacyPath)) return legacyPath
+
+        // Finally check if it's anywhere in the llamaDir (recursive search as last resort)
+        const findInDir = (dir: string): string | null => {
+            if (!existsSync(dir)) return null
+            const files = readdirSync(dir)
+            for (const file of files) {
+                const fullPath = path.join(dir, file)
+                const stat = statSync(fullPath)
+                if (stat.isDirectory() && file !== 'models') {
+                    const found = findInDir(fullPath)
+                    if (found) return found
+                } else if (file === BINARY_FILENAME) {
+                    return fullPath
+                }
+            }
+            return null
+        }
+        
+        return findInDir(this.llamaDir) || standardPath
     }
 
     isBinaryDownloaded(): boolean {
@@ -61,13 +86,13 @@ export class SetupManager extends EventEmitter {
     }
 
     async getStatus(): Promise<SetupStatus> {
-        const binDir = path.join(this.llamaDir, 'bin')
-        const binPath = path.join(binDir, BINARY_FILENAME)
+        const binPath = this.getBinaryPath()
+        const hasBinary = existsSync(binPath)
         const modelsDir = path.join(this.llamaDir, 'models')
-        
+
         let hasModel = false
         let modelPath: string | null = null
-        
+
         if (existsSync(modelsDir)) {
             const models = this.downloadService.getDownloadedModels()
             if (models.length > 0) {
@@ -77,7 +102,7 @@ export class SetupManager extends EventEmitter {
         }
 
         return {
-            hasBinary: existsSync(binPath),
+            hasBinary,
             hasModel,
             binaryPath: binPath,
             modelPath,
@@ -121,7 +146,7 @@ export class SetupManager extends EventEmitter {
             })
 
             await this.downloadAndExtractBinary(downloadUrl, archivePath)
-            
+
             this.emit('status', {
                 status: 'complete',
                 step: 'done',
@@ -172,16 +197,17 @@ export class SetupManager extends EventEmitter {
                 message: 'Extracting engine...'
             })
 
-            const extractCmd = IS_WINDOWS 
+            const extractCmd = IS_WINDOWS
                 ? `powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${binaryDir}' -Force"`
                 : `tar -xzf "${archivePath}" -C "${binaryDir}"`
 
             console.log(`[SetupManager] Running extraction: ${extractCmd}`)
 
             await new Promise<void>((resolve, reject) => {
-                exec(extractCmd, { timeout: 60000 }, (error) => {
+                exec(extractCmd, { timeout: 60000 }, (error, _stdout, stderr) => {
                     if (error) {
                         console.error('[SetupManager] Extraction failed:', error)
+                        console.error('[SetupManager] Extraction stderr:', stderr)
                         reject(error)
                         return
                     }
@@ -189,6 +215,60 @@ export class SetupManager extends EventEmitter {
                     resolve()
                 })
             })
+
+            // Fix nested folders - search for the binary recursively within binaryDir
+            console.log('[SetupManager] Verifying binary location...')
+            const findBinary = (dir: string): string | null => {
+                if (!existsSync(dir)) return null
+                const files = readdirSync(dir)
+                for (const file of files) {
+                    const fullPath = path.join(dir, file)
+                    const stat = statSync(fullPath)
+                    if (stat.isDirectory()) {
+                        const found = findBinary(fullPath)
+                        if (found) return found
+                    } else if (file === BINARY_FILENAME) {
+                        return fullPath
+                    }
+                }
+                return null
+            }
+
+            const foundBinPath = findBinary(binaryDir)
+            if (foundBinPath) {
+                const expectedBinPath = path.join(binaryDir, BINARY_FILENAME)
+                if (foundBinPath !== expectedBinPath) {
+                    console.log(`[SetupManager] Binary found in nested folder: ${foundBinPath}. Relocating...`)
+                    const nestedDir = path.dirname(foundBinPath)
+                    const filesToMove = readdirSync(nestedDir)
+                    
+                    for (const file of filesToMove) {
+                        const src = path.join(nestedDir, file)
+                        const dest = path.join(binaryDir, file)
+                        try {
+                            if (existsSync(dest) && !statSync(dest).isDirectory()) {
+                                unlinkSync(dest)
+                            }
+                            if (!existsSync(dest)) {
+                                renameSync(src, dest)
+                            }
+                        } catch (err) {
+                            console.error(`[SetupManager] Failed to move ${file}:`, err)
+                        }
+                    }
+                    console.log('[SetupManager] Relocation complete.')
+                }
+
+                // Ensure permissions on Linux
+                if (!IS_WINDOWS) {
+                    try {
+                        chmodSync(expectedBinPath, '755')
+                        console.log('[SetupManager] Updated binary permissions.')
+                    } catch (err) {
+                        console.error('[SetupManager] Failed to update permissions:', err)
+                    }
+                }
+            }
 
             try {
                 if (existsSync(archivePath)) unlinkSync(archivePath)
@@ -348,7 +428,7 @@ export class SetupManager extends EventEmitter {
                         // user requested log:
                         // console.log('[Setup] Progress:', Math.round(percent), '% -', bytesDownloaded, '/', totalBytes)
                         if (downloaded % (1024 * 1024 * 5) < chunk.length) { // Log every ~5MB to avoid spamming
-                             console.log('[Setup] Progress:', Math.round(percent), '% -', downloaded, '/', total)
+                            console.log('[Setup] Progress:', Math.round(percent), '% -', downloaded, '/', total)
                         }
 
                         this.emit('progress', progress)
