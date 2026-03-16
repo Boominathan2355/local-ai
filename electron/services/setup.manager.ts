@@ -88,6 +88,7 @@ export class SetupManager extends EventEmitter {
     async getStatus(): Promise<SetupStatus> {
         let binPath = this.getBinaryPath()
         const standardPath = path.join(this.llamaDir, 'bin', BINARY_FILENAME)
+        console.log(`[SetupManager] getStatus: llamaDir=${this.llamaDir}, binPath=${binPath}, standardPath=${standardPath}`)
         
         // Migration: If found in legacy/recursive but not standard, move it and its dependencies
         if (existsSync(binPath) && binPath !== standardPath) {
@@ -98,14 +99,27 @@ export class SetupManager extends EventEmitter {
             const srcDir = path.dirname(binPath)
             try {
                 // Move DLLs/dependencies if they are in the same folder
+                const moveRecursively = (src: string, dest: string) => {
+                    if (!existsSync(src)) return
+                    if (statSync(src).isDirectory()) {
+                        if (!existsSync(dest)) mkdirSync(dest, { recursive: true })
+                        const files = readdirSync(src)
+                        for (const file of files) {
+                            moveRecursively(path.join(src, file), path.join(dest, file))
+                        }
+                    } else {
+                        const ext = path.extname(src).toLowerCase()
+                        // Move critical engine files
+                        if (ext === '.dll' || ext === '.so' || path.basename(src) === BINARY_FILENAME) {
+                            if (existsSync(dest)) unlinkSync(dest)
+                            renameSync(src, dest)
+                        }
+                    }
+                }
+                
                 const files = readdirSync(srcDir)
                 for (const file of files) {
-                    if (file.endsWith('.dll') || file.endsWith('.so') || file === BINARY_FILENAME) {
-                        const srcFile = path.join(srcDir, file)
-                        const destFile = path.join(binDir, file)
-                        if (existsSync(destFile)) unlinkSync(destFile)
-                        renameSync(srcFile, destFile)
-                    }
+                    moveRecursively(path.join(srcDir, file), path.join(binDir, file))
                 }
                 binPath = standardPath
             } catch (err) {
@@ -114,6 +128,7 @@ export class SetupManager extends EventEmitter {
         }
 
         const hasBinary = existsSync(binPath)
+        console.log(`[SetupManager] getStatus: hasBinary=${hasBinary}, binPath=${binPath}`)
         const modelsDir = path.join(this.llamaDir, 'models')
 
         let hasModel = false
@@ -266,21 +281,38 @@ export class SetupManager extends EventEmitter {
                 if (foundBinPath !== expectedBinPath) {
                     console.log(`[SetupManager] Binary found in nested folder: ${foundBinPath}. Relocating...`)
                     const nestedDir = path.dirname(foundBinPath)
-                    const filesToMove = readdirSync(nestedDir)
                     
-                    for (const file of filesToMove) {
-                        const src = path.join(nestedDir, file)
-                        const dest = path.join(binaryDir, file)
-                        try {
-                            if (existsSync(dest) && !statSync(dest).isDirectory()) {
-                                unlinkSync(dest)
+                    const moveAllRecursively = (src: string, dest: string) => {
+                        if (!existsSync(src)) return
+                        if (statSync(src).isDirectory()) {
+                            if (!existsSync(dest)) mkdirSync(dest, { recursive: true })
+                            const files = readdirSync(src)
+                            for (const file of files) {
+                                moveAllRecursively(path.join(src, file), path.join(dest, file))
+                            }
+                        } else {
+                            if (existsSync(dest)) {
+                                try {
+                                    if (statSync(dest).isDirectory()) {
+                                        // Skip or handle directory collision if necessary
+                                    } else {
+                                        unlinkSync(dest)
+                                    }
+                                } catch (e) { /* ignore */ }
                             }
                             if (!existsSync(dest)) {
-                                renameSync(src, dest)
+                                try {
+                                    renameSync(src, dest)
+                                } catch (e) {
+                                    console.error(`[SetupManager] Failed to move ${src} to ${dest}:`, e)
+                                }
                             }
-                        } catch (err) {
-                            console.error(`[SetupManager] Failed to move ${file}:`, err)
                         }
+                    }
+
+                    const filesToMove = readdirSync(nestedDir)
+                    for (const file of filesToMove) {
+                        moveAllRecursively(path.join(nestedDir, file), path.join(binaryDir, file))
                     }
                     console.log('[SetupManager] Relocation complete.')
                 }
@@ -410,7 +442,7 @@ export class SetupManager extends EventEmitter {
                 console.log('[Setup] Platform:', process.platform, 'Arch:', process.arch)
 
                 const client = downloadUrl.startsWith('https') ? https : http
-                const req = client.get(downloadUrl, { timeout: 30000 }, (res) => {
+                const req = client.get(downloadUrl, { timeout: 60000 }, (res) => {
                     console.log(`[SetupManager] downloadFile: HTTP ${res.statusCode} for ${downloadUrl}`)
                     if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                         console.log(`[Setup] Redirecting to: ${res.headers.location}`)
@@ -434,6 +466,9 @@ export class SetupManager extends EventEmitter {
 
                     res.on('data', (chunk: Buffer) => {
                         if (aborted) return
+
+                        // Reset timeout on every chunk
+                        req.setTimeout(60000)
 
                         downloaded += chunk.length
                         const elapsed = (Date.now() - startTime) / 1000
@@ -470,27 +505,44 @@ export class SetupManager extends EventEmitter {
                                 return
                             }
 
-                            try {
-                                renameSync(tempPath, destPath)
-                                console.log('[Setup] Download complete')
-                            } catch (err) {
-                                console.error('[Setup] Failed to rename temp file:', err)
-                                reject(err)
-                                return
+                            const finalize = async () => {
+                                for (let attempt = 1; attempt <= 5; attempt++) {
+                                    try {
+                                        if (aborted) return
+
+                                        if (existsSync(destPath)) {
+                                            try { unlinkSync(destPath) } catch (e) { /* ignore */ }
+                                        }
+                                        renameSync(tempPath, destPath)
+                                        console.log('[Setup] Download complete')
+
+                                        this.activeDownloads.delete(downloadId)
+                                        this.emit('complete', { id: downloadId, path: destPath })
+                                        resolve()
+                                        return
+                                    } catch (err) {
+                                        if (attempt === 5) {
+                                            console.error('[Setup] Failed to rename temp file after 5 attempts:', err)
+                                            if (!aborted) cleanup()
+                                            reject(err)
+                                            return
+                                        }
+                                        console.warn(`[Setup] Rename attempt ${attempt} failed, retrying in 200ms...`)
+                                        await new Promise(r => setTimeout(r, 200))
+                                    }
+                                }
                             }
 
-                            this.activeDownloads.delete(downloadId)
-                            this.emit('complete', { id: downloadId, path: destPath })
-                            resolve()
+                            finalize()
                         })
                     })
                 })
 
                 req.on('timeout', () => {
-                    console.error('[Setup] Download timed out after 30 seconds')
+                    console.error('[Setup] Download timed out after 60 seconds of inactivity')
                     req.destroy()
                     cleanup()
-                    reject(new Error('Download timed out after 30 seconds'))
+                    reject(new Error('Download timed out after 60 seconds of inactivity'))
                 })
 
                 req.on('error', (err) => {

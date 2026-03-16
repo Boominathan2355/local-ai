@@ -935,7 +935,7 @@ export class DownloadService extends EventEmitter {
                 console.log(`[DownloadService] Starting download from: ${downloadUrl}`)
 
                 const client = downloadUrl.startsWith('https') ? https : http
-                const req = client.get(downloadUrl, { timeout: 30000 }, (res) => {
+                const req = client.get(downloadUrl, { timeout: 60000 }, (res) => {
                     if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                         console.log(`[DownloadService] Redirecting to: ${res.headers.location}`)
                         startDownload(res.headers.location, redirectCount + 1)
@@ -958,6 +958,9 @@ export class DownloadService extends EventEmitter {
 
                     res.on('data', (chunk: Buffer) => {
                         if (aborted) return
+
+                        // Reset timeout on every chunk to ensure active downloads don't time out
+                        req.setTimeout(60000)
 
                         downloaded += chunk.length
                         const elapsed = (Date.now() - startTime) / 1000
@@ -986,23 +989,43 @@ export class DownloadService extends EventEmitter {
                                 return
                             }
 
-                            try {
-                                const stats = statSync(tempPath)
-                                if (total > 0 && stats.size !== total) {
-                                    throw new Error(`Download incomplete: expected ${total} bytes, got ${stats.size} bytes`)
+                            const finalize = async () => {
+                                for (let attempt = 1; attempt <= 5; attempt++) {
+                                    try {
+                                        if (aborted) return
+
+                                        if (attempt === 1) {
+                                            const stats = statSync(tempPath)
+                                            if (total > 0 && stats.size !== total) {
+                                                throw new Error(`Download incomplete: expected ${total} bytes, got ${stats.size} bytes`)
+                                            }
+                                        }
+
+                                        if (existsSync(destPath)) {
+                                            try { unlinkSync(destPath) } catch (e) { /* ignore */ }
+                                        }
+
+                                        renameSync(tempPath, destPath)
+                                        console.log(`[DownloadService] Download complete: ${downloadId}`)
+                                        
+                                        this.activeDownloads.delete(downloadId)
+                                        this.emit('complete', { id: downloadId, path: destPath })
+                                        resolve()
+                                        return
+                                    } catch (err) {
+                                        if (attempt === 5) {
+                                            console.error(`[DownloadService] Error finalizing download ${downloadId} after 5 attempts:`, err)
+                                            if (!aborted) cleanup()
+                                            reject(err)
+                                            return
+                                        }
+                                        console.warn(`[DownloadService] Finalization attempt ${attempt} failed for ${downloadId}, retrying in 200ms...`)
+                                        await new Promise(r => setTimeout(r, 200))
+                                    }
                                 }
-                                renameSync(tempPath, destPath)
-                                console.log(`[DownloadService] Download complete: ${downloadId}`)
-                            } catch (err) {
-                                console.error(`[DownloadService] Error finalizing download ${downloadId}:`, err)
-                                cleanup()
-                                reject(err)
-                                return
                             }
 
-                            this.activeDownloads.delete(downloadId)
-                            this.emit('complete', { id: downloadId, path: destPath })
-                            resolve()
+                            finalize()
                         })
                     })
 
@@ -1017,7 +1040,7 @@ export class DownloadService extends EventEmitter {
                     console.error(`[DownloadService] Download timed out for ${downloadId}`)
                     req.destroy()
                     cleanup()
-                    reject(new Error('Download timed out after 30 seconds'))
+                    reject(new Error('Download timed out after 60 seconds of inactivity'))
                 })
 
                 req.on('error', (err) => {

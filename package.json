@@ -9,7 +9,8 @@
     "name": "Local AI"
   },
   "scripts": {
-    "dev": "ELECTRON_DISABLE_SANDBOX=true electron-vite dev",
+    "dev": "electron-vite dev",
+    "dev1": "ELECTRON_DISABLE_SANDBOX=true electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",

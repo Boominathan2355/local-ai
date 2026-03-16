@@ -40,7 +40,7 @@ interface SetupStatus {
     llamaDir: string
 }
 
-type SetupStep = 'binary' | 'model' | 'done'
+type SetupStep = 'loading' | 'binary' | 'model' | 'done'
 
 interface ModelSetupProps {
     onComplete: () => void
@@ -65,7 +65,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
     const [models, setModels] = useState<DownloadableModel[]>([])
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
     const [status, setStatus] = useState<SetupStatus>({ hasBinary: false, hasModel: false, llamaDir: '' })
-    const [currentStep, setCurrentStep] = useState<SetupStep>('binary')
+    const [currentStep, setCurrentStep] = useState<SetupStep>('loading')
     const [progress, setProgress] = useState<DownloadProgress | null>(null)
     const [isDownloading, setIsDownloading] = useState(false)
     const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
@@ -79,11 +79,16 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
         if (!api) return
 
         api.setup.getStatus().then((s) => {
+            console.log('[ModelSetup] Initial status search:', s)
             setStatus(s)
+            
+            // Initial step determination
             if (s.hasBinary && s.hasModel) {
                 setCurrentStep('done')
             } else if (s.hasBinary) {
                 setCurrentStep('model')
+            } else {
+                setCurrentStep('binary')
             }
         })
 
@@ -113,6 +118,10 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
         if (!api) return
 
         const cleanupProgress = api.download.onProgress((p) => {
+            if (!isDownloading) {
+                console.log('[ModelSetup] Detected background model download, enabling progress UI')
+                setIsDownloading(true)
+            }
             setProgress(p)
         })
 
@@ -143,6 +152,10 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
         })
 
         const cleanupSetupProgress = api.setup.onProgress((p) => {
+            if (!isDownloading) {
+                console.log('[ModelSetup] Detected background engine install, enabling progress UI')
+                setIsDownloading(true)
+            }
             setProgress(p)
         })
 
@@ -154,11 +167,14 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             api.setup.getStatus().then((s) => {
                 console.log('[ModelSetup] Status refreshed after engine install:', s)
                 setStatus(s)
+                
+                // Only move forward, never back to binary
                 if (s.hasBinary && s.hasModel) {
                     setCurrentStep('done')
                 } else if (s.hasBinary) {
                     setCurrentStep('model')
                 }
+                // If s.hasBinary is false, stay in 'binary' (already there)
             }).catch(err => {
                 console.error('[ModelSetup] Failed to refresh status after engine install:', err)
             })
@@ -230,7 +246,17 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             </header>
 
             <div className="setup" id="model-setup">
-                {currentStep !== 'done' && (
+                {currentStep === 'loading' && (
+                    <div className="setup__header animate-pulse">
+                        <div className="setup__icon"><Rocket size={28} className="animate-bounce" /></div>
+                        <h1 className="setup__title">Checking Status...</h1>
+                        <p className="setup__subtitle">
+                            Please wait while we check your local AI environment.
+                        </p>
+                    </div>
+                )}
+
+                {currentStep !== 'done' && currentStep !== 'loading' && (
                     <div className="setup__header">
                         <div className="setup__icon"><Rocket size={28} /></div>
                         <h1 className="setup__title">Setup Local AI</h1>
