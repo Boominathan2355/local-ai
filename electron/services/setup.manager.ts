@@ -86,7 +86,33 @@ export class SetupManager extends EventEmitter {
     }
 
     async getStatus(): Promise<SetupStatus> {
-        const binPath = this.getBinaryPath()
+        let binPath = this.getBinaryPath()
+        const standardPath = path.join(this.llamaDir, 'bin', BINARY_FILENAME)
+        
+        // Migration: If found in legacy/recursive but not standard, move it and its dependencies
+        if (existsSync(binPath) && binPath !== standardPath) {
+            console.log(`[SetupManager] Migrating binary from ${binPath} to ${standardPath}`)
+            const binDir = path.dirname(standardPath)
+            if (!existsSync(binDir)) mkdirSync(binDir, { recursive: true })
+            
+            const srcDir = path.dirname(binPath)
+            try {
+                // Move DLLs/dependencies if they are in the same folder
+                const files = readdirSync(srcDir)
+                for (const file of files) {
+                    if (file.endsWith('.dll') || file.endsWith('.so') || file === BINARY_FILENAME) {
+                        const srcFile = path.join(srcDir, file)
+                        const destFile = path.join(binDir, file)
+                        if (existsSync(destFile)) unlinkSync(destFile)
+                        renameSync(srcFile, destFile)
+                    }
+                }
+                binPath = standardPath
+            } catch (err) {
+                console.error('[SetupManager] Migration failed:', err)
+            }
+        }
+
         const hasBinary = existsSync(binPath)
         const modelsDir = path.join(this.llamaDir, 'models')
 
