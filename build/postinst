@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+# Path to the chrome-sandbox binary
+SANDBOX_PATH="/opt/local-ai-assistant/chrome-sandbox"
+
+if [ -f "$SANDBOX_PATH" ]; then
+    echo "Setting permissions for chrome-sandbox..."
+    chown root:root "$SANDBOX_PATH"
+    chmod 4755 "$SANDBOX_PATH"
+else
+    echo "Warning: chrome-sandbox not found at $SANDBOX_PATH"
+fi
