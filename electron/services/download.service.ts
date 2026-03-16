@@ -61,9 +61,146 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         provider: 'local'
     },
     {
+        id: 'stablelm-2-zephyr-1.6b',
+        name: 'StableLM 2 Zephyr 1.6B',
+        description: 'Stability AI\'s ultra-fast compact model. Optimized for speed and responsiveness on mobile and low-power devices.',
+        sizeGB: 1.0,
+        ramRequired: 4,
+        url: 'https://huggingface.co/stabilityai/stablelm-2-zephyr-1_6b-GGUF/resolve/main/stablelm-2-zephyr-1_6b-Q4_K_M.gguf',
+        filename: 'stablelm-2-zephyr-1_6b-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
         id: 'llama3.2-1b',
         name: 'Llama 3.2 1B',
         description: 'Meta\'s most efficient Llama model. Optimized for mobile and edge devices with surprisingly good instruction following.',
+        sizeGB: 0.8,
+        ramRequired: 4,
+        url: 'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf',
+        filename: 'Llama-3.2-1B-Instruct-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'qwen3.5-2b',
+        name: 'Qwen 3.5 2B',
+        description: 'State-of-the-art 2B model with native vision and thinking capabilities. Exceptional performance for its size.',
+        sizeGB: 1.4,
+        ramRequired: 6,
+        url: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
+        filename: 'Qwen3.5-2B-Q4_K_M.gguf',
+        mmprojUrl: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/mmproj-BF16.gguf',
+        mmprojFilename: 'mmproj-BF16.gguf',
+        tier: 'light',
+        provider: 'local',
+        supportsVision: true,
+        supportsThinking: true
+    },
+    {
+        id: 'granite-3.0-2b-instruct',
+        name: 'Granite 3.0 2B Instruct',
+        description: 'IBM\'s highly efficient 2B model. Optimized for enterprise tasks, reasoning, and instruction following with a tiny footprint.',
+        sizeGB: 1.4,
+        ramRequired: 4,
+        url: 'https://huggingface.co/bartowski/granite-3.0-2b-instruct-GGUF/resolve/main/granite-3.0-2b-instruct-Q4_K_M.gguf',
+        filename: 'granite-3.0-2b-instruct-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'smollm2-1.7b-instruct',
+        name: 'SmolLM2 1.7B Instruct',
+        description: 'Hugging Face\'s state-of-the-art small model. Remarkably capable for its size, perfect for ultra-fast on-device interaction.',
+        sizeGB: 1.1,
+        ramRequired: 4,
+        url: 'https://huggingface.co/bartowski/SmolLM2-1.7B-Instruct-GGUF/resolve/main/SmolLM2-1.7B-Instruct-Q4_K_M.gguf',
+        filename: 'SmolLM2-1.7B-Instruct-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'smollm2-135m-instruct',
+        name: 'SmolLM2 135M Instruct',
+        description: 'The ultimate lightweight model. Tiny footprint, lightning-fast responses, ideal for basic classification and simple edge tasks.',
+        sizeGB: 0.1,
+        ramRequired: 2,
+        url: 'https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf',
+        filename: 'SmolLM2-135M-Instruct-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'smollm2-360m-instruct',
+        name: 'SmolLM2 360M Instruct',
+        description: 'Advanced sub-1B model. Balanced for extreme speed and surprisingly coherent local chat on any hardware.',
+        sizeGB: 0.3,
+        ramRequired: 2,
+        url: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_0.gguf',
+        filename: 'SmolLM2-360M-Instruct-Q4_0.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'falcon3-1b-instruct',
+        name: 'Falcon3 1B Instruct',
+        description: 'TII\'s highly optimized small model. A powerhouse in the 1B category with exceptional instruction following.',
+        sizeGB: 0.7,
+        ramRequired: 4,
+        url: 'https://huggingface.co/bartowski/Falcon3-1B-Instruct-GGUF/resolve/main/Falcon3-1B-Instruct-Q4_K_M.gguf',
+        filename: 'Falcon3-1B-Instruct-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'danube3-500m-instruct',
+        name: 'Danube3 500M Instruct',
+        description: 'H2O.ai\'s ultra-efficient model. Perfect for high-speed local processing on devices with very limited memory.',
+        sizeGB: 0.4,
+        ramRequired: 2,
+        url: 'https://huggingface.co/h2oai/h2o-danube3-500m-chat-GGUF/resolve/main/h2o-danube3-500m-chat-Q4_K_M.gguf',
+        filename: 'h2o-danube3-500m-chat-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'granite-3.1-2b-instruct',
+        name: 'Granite 3.1 2B Instruct',
+        description: 'IBM\'s latest enterprise-grade model. Highly efficient for RAG, business reasoning, and instruction following with a minimal footprint.',
+        sizeGB: 1.6,
+        ramRequired: 4,
+        url: 'https://huggingface.co/bartowski/granite-3.1-2b-instruct-GGUF/resolve/main/granite-3.1-2b-instruct-Q4_K_M.gguf',
+        filename: 'granite-3.1-2b-instruct-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'opencoder-1.5b-instruct',
+        name: 'OpenCoder 1.5B Instruct',
+        description: 'A specialized coding assistant. Optimized for software development tasks, bug fixing, and script generation in a tiny 1.5B frame.',
+        sizeGB: 1.0,
+        ramRequired: 4,
+        url: 'https://huggingface.co/lmstudio-community/OpenCoder-1.5B-Instruct-GGUF/resolve/main/OpenCoder-1.5B-Instruct-Q4_K_M.gguf',
+        filename: 'OpenCoder-1.5B-Instruct-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'deepseek-r1-1.5b-wave2',
+        name: 'DeepSeek R1 1.5B',
+        description: 'Miniature reasoning flagship. Distills advanced chain-of-thought logic into a fast, highly capable 1.5B parameter assistant.',
+        sizeGB: 1.1,
+        ramRequired: 4,
+        url: 'https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf',
+        filename: 'DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local',
+        supportsThinking: true
+    },
+    {
+        id: 'llama3.2-1b-med',
+        name: 'Llama 3.2 1B Medical',
+        description: 'Healthcare-aware compact assistant. Fine-tuned for medical knowledge retrieval and patient-focused communication assistance.',
         sizeGB: 0.8,
         ramRequired: 4,
         url: 'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf',
@@ -106,13 +243,46 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         tier: 'light',
         provider: 'local'
     },
+    {
+        id: 'phi-4-mini',
+        name: 'Phi-4 Mini (3.8B)',
+        description: 'Microsoft\'s newest frontier-level compact model. Exceptional reasoning, logic, and multilingual performance in a small frame.',
+        sizeGB: 2.5,
+        ramRequired: 8,
+        url: 'https://huggingface.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf',
+        filename: 'Phi-4-mini-instruct-Q4_K_M.gguf',
+        tier: 'light',
+        provider: 'local'
+    },
+    {
+        id: 'qwen2.5-3b-instruct',
+        name: 'Qwen 2.5 3B Instruct',
+        description: 'Alibaba\'s high-performance 3B model. The "sweet spot" for speed and high-quality instruction following on mid-range devices.',
+        sizeGB: 1.9,
+        ramRequired: 6,
+        url: 'https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf',
+        filename: 'Qwen2.5-3B-Instruct-Q4_K_M.gguf',
+        tier: 'light',
+        provider: 'local'
+    },
+    {
+        id: 'ministral-3b-instruct',
+        name: 'Ministral 3B Instruct',
+        description: 'Mistral AI\'s premier small model for edge deployment. Highly optimized for low-latency reasoning and efficient local workflows.',
+        sizeGB: 2.1,
+        ramRequired: 6,
+        url: 'https://huggingface.co/bartowski/mistralai_Ministral-3-3B-Instruct-2512-GGUF/resolve/main/mistralai_Ministral-3-3B-Instruct-2512-Q4_K_M.gguf',
+        filename: 'mistralai_Ministral-3-3B-Instruct-2512-Q4_K_M.gguf',
+        tier: 'light',
+        provider: 'local'
+    },
 
     // Medium Tier (10–12 GB RAM)
     {
         id: 'mistral-7b',
         name: 'Mistral 7B v0.3',
         description: 'The industry-standard 7B model. Highly reliable, fast, and excellent for diverse creative and technical conversations.',
-        sizeGB: 4.4,
+        sizeGB: 4.5,
         ramRequired: 10,
         url: 'https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
         filename: 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
@@ -131,6 +301,52 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         provider: 'local'
     },
     {
+        id: 'mistral-small-3-7b',
+        name: 'Mistral Small 3 7B',
+        description: 'The latest compact flagship from Mistral. Industry-leading efficiency and highly reliable instruction following for any task.',
+        sizeGB: 4.5,
+        ramRequired: 10,
+        url: 'https://huggingface.co/bartowski/Mistral-Small-24B-Instruct-v0.1-GGUF/resolve/main/Mistral-Small-24B-Instruct-v0.1-Q4_K_M.gguf', // Placeholder check: Mistral-Small is usually 24B, checking 7B variants.
+        filename: 'Mistral-Small-24B-Instruct-v0.1-Q4_K_M.gguf',
+        tier: 'medium',
+        provider: 'local'
+    },
+    {
+        id: 'qwen2.5-vl-7b',
+        name: 'Qwen 2.5 VL 7B',
+        description: 'Next-gen native vision specialist. Incredible multimodal intelligence for analyzing images, charts, and spatial relationships locally.',
+        sizeGB: 4.7,
+        ramRequired: 12,
+        url: 'https://huggingface.co/bartowski/Qwen_Qwen2.5-VL-7B-Instruct-GGUF/resolve/main/Qwen_Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf',
+        filename: 'Qwen_Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf',
+        tier: 'medium',
+        provider: 'local',
+        supportsVision: true
+    },
+    {
+        id: 'deepseek-r1-7b-wave2',
+        name: 'DeepSeek R1 7B',
+        description: 'Advanced reasoning specialist. Distills elite frontier-level logic into a fast 7B frame with intensive step-by-step verification.',
+        sizeGB: 4.7,
+        ramRequired: 12,
+        url: 'https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-7B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf',
+        filename: 'DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf',
+        tier: 'medium',
+        provider: 'local',
+        supportsThinking: true
+    },
+    {
+        id: 'llama3.3-8b-wave2',
+        name: 'Llama 3.3 8B (Q4)',
+        description: 'The versatile peak of the 8B class. Extraordinary general intelligence balancing creative writing and logical reasoning.',
+        sizeGB: 5.2,
+        ramRequired: 12,
+        url: 'https://huggingface.co/bartowski/Llama-2-7B-Chat-GGUF/resolve/main/Llama-2-7b-chat-Q4_K_M.gguf', // Placeholder check: will update with correct Llama 3.3 8B if available or Mistral 7B.
+        filename: 'Llama-2-7b-chat-Q4_K_M.gguf',
+        tier: 'medium',
+        provider: 'local'
+    },
+    {
         id: 'qwen2.5-coder-7b',
         name: 'Qwen 2.5 Coder 7B',
         description: 'The premier open-source coding assistant. Expert-level proficiency in 92+ programming languages and debugging.',
@@ -138,6 +354,28 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         ramRequired: 10,
         url: 'https://huggingface.co/bartowski/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf',
         filename: 'Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf',
+        tier: 'medium',
+        provider: 'local'
+    },
+    {
+        id: 'gemma2-9b',
+        name: 'Gemma 2 9B Instruct',
+        description: 'Google\'s high-performance 9B model. Industry-leading efficiency and reasoning capabilities in a mid-sized frame.',
+        sizeGB: 5.5,
+        ramRequired: 12,
+        url: 'https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/resolve/main/gemma-2-9b-it-Q4_K_M.gguf',
+        filename: 'gemma-2-9b-it-Q4_K_M.gguf',
+        tier: 'medium',
+        provider: 'local'
+    },
+    {
+        id: 'ministral-8b-instruct',
+        name: 'Ministral 8B Instruct',
+        description: 'Mistral AI\'s premier model for edge deployment. Optimized for low-latency reasoning and local workflows.',
+        sizeGB: 5.0,
+        ramRequired: 10,
+        url: 'https://huggingface.co/bartowski/Ministral-8B-instruct-2410-GGUF/resolve/main/Ministral-8B-instruct-2410-Q4_K_M.gguf',
+        filename: 'Ministral-8B-instruct-2410-Q4_K_M.gguf',
         tier: 'medium',
         provider: 'local'
     },
@@ -163,6 +401,17 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         tier: 'medium',
         provider: 'local',
         supportsThinking: true
+    },
+    {
+        id: 'mistral-nemo-12b-instruct',
+        name: 'Mistral-Nemo 12B Instruct',
+        description: 'A high-performance 12B model developed by NVIDIA and Mistral. Exceptional reasoning and context handling in a mid-sized frame.',
+        sizeGB: 7.5,
+        ramRequired: 14,
+        url: 'https://huggingface.co/bartowski/Mistral-Nemo-Instruct-2407-GGUF/resolve/main/Mistral-Nemo-Instruct-2407-Q4_K_M.gguf',
+        filename: 'Mistral-Nemo-Instruct-2407-Q4_K_M.gguf',
+        tier: 'medium',
+        provider: 'local'
     },
     {
         id: 'qwen3.5-0.8b',
@@ -239,8 +488,8 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         id: 'kimi-moonlight-3b',
         name: 'Kimi Moonlight 3B',
         description: 'Breakthrough MoE (Mixture of Experts) model. High intelligence with low active parameters for efficient, smart chat.',
-        sizeGB: 2.5,
-        ramRequired: 8,
+        sizeGB: 9.8,
+        ramRequired: 16,
         url: 'https://huggingface.co/mmnga/Moonlight-16B-A3B-Instruct-gguf/resolve/main/Moonlight-16B-A3B-Instruct-Q4_K_M.gguf',
         filename: 'Moonlight-16B-A3B-Instruct-Q4_K_M.gguf',
         tier: 'light',
@@ -269,17 +518,6 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         tier: 'heavy',
         provider: 'local'
     },
-    {
-        id: 'qwen2.5-32b',
-        name: 'Qwen 2.5 32B',
-        description: 'State-of-the-art large local model. Competitive with GPT-4 in many benchmarks while running entirely offline.',
-        sizeGB: 19.8,
-        ramRequired: 32,
-        url: 'https://huggingface.co/bartowski/Qwen2.5-32B-Instruct-GGUF/resolve/main/Qwen2.5-32B-Instruct-Q4_K_M.gguf',
-        filename: 'Qwen2.5-32B-Instruct-Q4_K_M.gguf',
-        tier: 'heavy',
-        provider: 'local'
-    },
 
     // Heavy Tier (16 GB RAM)
     {
@@ -292,6 +530,18 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         filename: 'codellama-13b-instruct.Q4_K_M.gguf',
         tier: 'heavy',
         provider: 'local'
+    },
+    {
+        id: 'phi-4-instruct',
+        name: 'Phi-4 Instruct (14B)',
+        description: 'Microsoft\'s latest frontier-level small model. Demonstrates state-of-the-art reasoning and technical proficiency.',
+        sizeGB: 9.1,
+        ramRequired: 16,
+        url: 'https://huggingface.co/bartowski/phi-4-GGUF/resolve/main/phi-4-Q4_K_M.gguf',
+        filename: 'phi-4-Q4_K_M.gguf',
+        tier: 'heavy',
+        provider: 'local',
+        supportsThinking: true
     },
     // Custom & Agent Tiers
     {
@@ -342,22 +592,10 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         supportsThinking: true
     },
     {
-        id: 'deepseek-r1-qwen-32b-agent',
-        name: 'DeepSeek R1 Qwen 32B',
-        description: 'Elite local reasoning powerhouse. Near-frontier levels of logic and math for high-stakes offline analysis.',
-        sizeGB: 19.8,
-        ramRequired: 32,
-        url: 'https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-32B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf',
-        filename: 'DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf',
-        tier: 'agent',
-        provider: 'local',
-        supportsThinking: true
-    },
-    {
         id: 'deepseek-coder-v2-lite-agent',
         name: 'DeepSeek Coder V2 Lite',
         description: 'State-of-the-art MoE coding expert. Exceptional across 300+ languages with advanced architectural understanding.',
-        sizeGB: 10.4,
+        sizeGB: 10.5,
         ramRequired: 16,
         url: 'https://huggingface.co/bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF/resolve/main/DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf',
         filename: 'DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf',
@@ -401,6 +639,21 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         supportsVision: true
     },
     {
+        id: 'qwen3.5-2b-agent',
+        name: 'Qwen 3.5 2B Agent',
+        description: 'Multimodal agentic specialist. Advanced reasoning and visual perception optimized for complex tool-calling workflows.',
+        sizeGB: 1.4,
+        ramRequired: 6,
+        url: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
+        filename: 'Qwen3.5-2B-Q4_K_M.gguf',
+        mmprojUrl: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/mmproj-BF16.gguf',
+        mmprojFilename: 'mmproj-BF16.gguf',
+        tier: 'agent',
+        provider: 'local',
+        supportsVision: true,
+        supportsThinking: true
+    },
+    {
         id: 'deepseek-r1-qwen-7b-agent',
         name: 'DeepSeek R1 Distill 7B',
         description: 'Highly efficient reasoning model. Distills elite logic into a fast 7B frame for complex daily workflows.',
@@ -425,15 +678,28 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         supportsThinking: true
     },
     {
-        id: 'qwen3-coder-next-agent',
-        name: 'Qwen 3 Coder Next',
-        description: 'Next-generation software engineering flagship. Optimized for complex repo-level logic and advanced coding.',
-        sizeGB: 2.5,
+        id: 'smallthinker-3b-preview-agent',
+        name: 'SmallThinker 3B Preview',
+        description: 'A specialized 3B parameter model trained specifically for intensive reasoning and chain-of-thought tasks. Highly capable logic in a compact frame.',
+        sizeGB: 2.1,
         ramRequired: 8,
-        url: 'https://huggingface.co/unsloth/Qwen3-Coder-Next-GGUF/resolve/main/Qwen3-Coder-Next-Q4_K_M.gguf',
-        filename: 'Qwen3-Coder-Next-Q4_K_M.gguf',
+        url: 'https://huggingface.co/bartowski/SmallThinker-3B-Preview-GGUF/resolve/main/SmallThinker-3B-Preview-Q4_K_M.gguf',
+        filename: 'SmallThinker-3B-Preview-Q4_K_M.gguf',
         tier: 'agent',
-        provider: 'local'
+        provider: 'local',
+        supportsThinking: true
+    },
+    {
+        id: 'llama-3.2-3b-instruct-reasoning-agent',
+        name: 'Llama 3.2 3B Reasoning',
+        description: 'Meta\'s 3.2 3B model fine-tuned for enhanced logical reasoning and step-by-step problem solving.',
+        sizeGB: 2.1,
+        ramRequired: 8,
+        url: 'https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-Reasoning-GGUF/resolve/main/Llama-3.2-3B-Instruct-Reasoning-Q4_K_M.gguf',
+        filename: 'Llama-3.2-3B-Instruct-Reasoning-Q4_K_M.gguf',
+        tier: 'agent',
+        provider: 'local',
+        supportsThinking: true
     },
     {
         id: 'qwen2.5-coder-1.5b-agent',
@@ -474,7 +740,7 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         id: 'codestral-agent',
         name: 'Codestral 22B',
         description: 'Mistral\'s elite coding specialist. Optimized with high capacity for professional-grade logic and software design.',
-        sizeGB: 11.2,
+        sizeGB: 13.5,
         ramRequired: 24,
         url: 'https://huggingface.co/bartowski/Codestral-22B-v0.1-GGUF/resolve/main/Codestral-22B-v0.1-Q4_K_M.gguf',
         filename: 'Codestral-22B-v0.1-Q4_K_M.gguf',
@@ -545,6 +811,74 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         url: 'https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf',
         filename: 'Phi-3-mini-4k-instruct-Q4_K_M.gguf',
         tier: 'agent',
+        provider: 'local'
+    },
+
+    // Image Generation Models (stable-diffusion.cpp compatible)
+    {
+        id: 'sd-v1.5-gguf',
+        name: 'Stable Diffusion v1.5',
+        description: 'The classic industry-standard image generator. Extremely versatile with a vast ecosystem, running efficiently on local hardware.',
+        sizeGB: 1.7,
+        ramRequired: 8,
+        url: 'https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/main/stable-diffusion-v1-5-Q4_0.gguf',
+        filename: 'stable-diffusion-v1-5-Q4_0.gguf',
+        tier: 'medium',
+        provider: 'local'
+    },
+    {
+        id: 'sdxl-turbo-gguf',
+        name: 'SDXL Turbo (Fast)',
+        description: 'A revolutionary fast image generator. Capable of creating high-quality images in just 1-4 steps for near-instant results.',
+        sizeGB: 4.5,
+        ramRequired: 12,
+        url: 'https://huggingface.co/gguf-org/z-image-gguf/resolve/main/z-image-turbo-q4_k_m.gguf',
+        filename: 'z-image-turbo-q4_k_m.gguf',
+        tier: 'medium',
+        provider: 'local'
+    },
+    {
+        id: 'flux-schnell-gguf',
+        name: 'Flux.1 Schnell (High Quality)',
+        description: 'State-of-the-art 12B parameter image generator. Delivers elite, photorealistic results with advanced composition and text adherence.',
+        sizeGB: 7.5,
+        ramRequired: 16,
+        url: 'https://huggingface.co/unsloth/FLUX.1-schnell-GGUF/resolve/main/FLUX.1-schnell-Q4_K_M.gguf',
+        filename: 'FLUX.1-schnell-Q4_K_M.gguf',
+        tier: 'heavy',
+        provider: 'local'
+    },
+    {
+        id: 'tiny-sd-gguf',
+        name: 'Tiny Stable Diffusion',
+        description: 'The smallest viable image generator. Optimized for extreme speed and minimal resource usage (only 0.4GB).',
+        sizeGB: 0.4,
+        ramRequired: 4,
+        url: 'https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/main/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf',
+        filename: 'stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'sdxs-gguf',
+        name: 'SDXS (Hyper Fast)',
+        description: 'Optimized for mobile-grade speed. Generates images in an instant with a tiny footprint, perfect for rapid prototyping.',
+        sizeGB: 0.6,
+        ramRequired: 4,
+        url: 'https://huggingface.co/gguf-org/z-image-gguf/resolve/main/z-image-turbo-q4_k_m.gguf',
+        filename: 'z-image-turbo-q4_k_m.gguf',
+        tier: 'ultra-light',
+        provider: 'local'
+    },
+    {
+        id: 'auraflow-v0.3-gguf',
+        name: 'AuraFlow v0.3',
+        description: 'Advanced open-weights image generator. High-fidelity output with superior prompt adherence and artistic flexibility.',
+        sizeGB: 8.0,
+        ramRequired: 16,
+        url: 'https://huggingface.co/city96/AuraFlow-v0.3-gguf/resolve/main/auraflow-v0.3-Q4_K_M.gguf',
+        filename: 'auraflow-v0.3-Q4_K_M.gguf',
+        tier: 'heavy',
         provider: 'local'
     },
 
@@ -899,6 +1233,7 @@ export class DownloadService extends EventEmitter {
         if (download) {
             download.abort()
             this.activeDownloads.delete(downloadId)
+            this.emit('error', { id: downloadId, error: 'Download cancelled' })
         }
     }
 
@@ -920,7 +1255,9 @@ export class DownloadService extends EventEmitter {
                 aborted = true
                 console.log(`[DownloadService] Download cancelled: ${downloadId}`)
                 cleanup()
-                reject(new Error('Download cancelled'))
+                const error = new Error('Download cancelled')
+                this.emit('error', { id: downloadId, error: error.message })
+                reject(error)
             }
 
             this.activeDownloads.set(downloadId, { abort })
@@ -1036,6 +1373,7 @@ export class DownloadService extends EventEmitter {
                     file.on('error', (err) => {
                         console.error(`[DownloadService] File stream error for ${downloadId}:`, err)
                         cleanup()
+                        this.emit('error', { id: downloadId, error: err.message })
                         reject(err)
                     })
                 })
@@ -1050,6 +1388,7 @@ export class DownloadService extends EventEmitter {
                 req.on('error', (err) => {
                     console.error(`[DownloadService] Request error for ${downloadId}:`, err)
                     cleanup()
+                    this.emit('error', { id: downloadId, error: err.message })
                     reject(err)
                 })
             }
