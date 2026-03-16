@@ -113,7 +113,9 @@ function initServices(): void {
     }
 
     llamaServer.on('statusChanged', (status) => {
-        mainWindow?.webContents.send(IPC_CHANNELS.MODEL_STATUS_CHANGED, status)
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send(IPC_CHANNELS.MODEL_STATUS_CHANGED, status)
+        }
     })
 
     llamaServer.on('error', (error) => console.error('[LlamaServer]', error))
@@ -127,7 +129,9 @@ function initServices(): void {
     }
 
     storage.on('settingsChanged', (settings) => {
-        mainWindow?.webContents.send(IPC_CHANNELS.SETTINGS_CHANGED, settings)
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+            mainWindow.webContents.send(IPC_CHANNELS.SETTINGS_CHANGED, settings)
+        }
         if (mcpController) {
             mcpController.permissions.setAutoApproveReads(settings.mcpAutoApproveReads || false)
         }

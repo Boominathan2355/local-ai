@@ -37,6 +37,8 @@ interface DownloadProgress {
 interface SetupStatus {
     hasBinary: boolean
     hasModel: boolean
+    binaryPath: string
+    modelPath: string | null
     llamaDir: string
 }
 
@@ -64,7 +66,7 @@ function formatEta(seconds: number): string {
 export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
     const [models, setModels] = useState<DownloadableModel[]>([])
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
-    const [status, setStatus] = useState<SetupStatus>({ hasBinary: false, hasModel: false, llamaDir: '' })
+    const [status, setStatus] = useState<SetupStatus>({ hasBinary: false, hasModel: false, binaryPath: '', modelPath: null, llamaDir: '' })
     const [currentStep, setCurrentStep] = useState<SetupStep>('loading')
     const [progress, setProgress] = useState<DownloadProgress | null>(null)
     const [isDownloading, setIsDownloading] = useState(false)
@@ -121,6 +123,18 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             if (!isDownloading) {
                 console.log('[ModelSetup] Detected background model download, enabling progress UI')
                 setIsDownloading(true)
+                // Ensure we are at the model step if a model is downloading
+                if (p.id?.startsWith('model:') && currentStep !== 'done') {
+                    setCurrentStep('model')
+                }
+            }
+            // Auto-sync selectedModelId if it's a model download
+            if (p.id?.startsWith('model:')) {
+                const modelId = p.id.replace('model:', '')
+                if (modelId && selectedModelId !== modelId) {
+                    console.log(`[ModelSetup] Syncing selectedModelId to ${modelId} from progress event`)
+                    setSelectedModelId(modelId)
+                }
             }
             setProgress(p)
         })
@@ -129,6 +143,11 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             console.log('[ModelSetup] Model download complete event received')
             setIsDownloading(false)
             setProgress(null)
+
+            // Refresh models list to update "downloaded" status
+            api.download.getModels({ includeCloud: false }).then((m) => {
+                setModels(m as DownloadableModel[])
+            })
 
             // Refresh status immediately to advance step
             api.setup.getStatus().then((s) => {
@@ -141,7 +160,6 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                 }
             }).catch(err => {
                 console.error('[ModelSetup] Failed to refresh status after model download:', err)
-                // Fallback: stay in model step but allow user to try "Use This Model"
             })
         })
 
@@ -312,7 +330,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                 )}
 
                 {/* Step 2: Model Selection */}
-                {currentStep === 'model' && !isDownloading && (
+                {currentStep === 'model' && (
                     <div className="setup__card animate-fadeIn">
                         <div className="setup__models" id="model-list">
                             {models.map((model, index) => (
@@ -324,10 +342,29 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                 >
                                     <div className="model-card__name">{model.name}</div>
                                     <div className="model-card__description">{model.description}</div>
+                                    
+                                    {/* Integrated Progress Bar for downloading models */}
+                                    {isDownloading && progress && (progress.id === `model:${model.id}` || progress.filename === model.filename) && (
+                                        <div className="model-card__progress">
+                                            <div className="progress-bar">
+                                                <div
+                                                    className="progress-bar__fill"
+                                                    style={{ width: `${progress.percent}%` }}
+                                                />
+                                            </div>
+                                            <div className="progress-bar__info">
+                                                <span>{Math.round(progress.percent)}% · {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
+                                                <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)} remaining</span>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="model-card__meta">
                                         <span>{model.sizeGB} GB</span>
                                         {model.downloaded ? (
                                             <span className="model-card__badge model-card__badge--downloaded">Downloaded</span>
+                                        ) : isDownloading && (progress?.id === `model:${model.id}` || (model.filename && progress?.filename === model.filename)) ? (
+                                            <span className="model-card__badge model-card__badge--downloading">Downloading</span>
                                         ) : selectedModelId === model.id ? (
                                             <span className="model-card__badge model-card__badge--recommended">
                                                 {systemInfo ? getRecommendation(models, systemInfo)?.reason : 'Recommended'}
@@ -338,26 +375,46 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                             ))}
                         </div>
 
-                        <div className="setup__actions">
-                            {models.find((m) => m.id === selectedModelId)?.downloaded ? (
-                                <button
-                                    className="setup__download-btn"
-                                    onClick={onComplete}
-                                    id="use-model-btn"
-                                >
-                                    <Check size={16} /> Use This Model
-                                </button>
-                            ) : (
-                                <button
-                                    className="setup__download-btn"
-                                    onClick={handleAction}
-                                    disabled={!selectedModelId}
-                                    id="download-model-btn"
-                                >
-                                    <Download size={16} /> Download {models.find((m) => m.id === selectedModelId)?.name ?? 'Model'}
-                                </button>
-                            )}
-                        </div>
+                        {/* Integrated Progress Bar (fallback for models) if ID match fails but filename works */}
+                        {isDownloading && progress?.id?.startsWith('model:') && !models.some(m => progress.id === `model:${m.id}` || (m.filename && progress.filename === m.filename)) && (
+                            <div className="setup__progress-container animate-slideUp" style={{ marginTop: 'var(--space-xl)' }}>
+                                <div className="setup__progress">
+                                    <p style={{ color: 'var(--text-primary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-md)', textAlign: 'center' }}>
+                                        {progress.filename}
+                                    </p>
+                                    <div className="progress-bar">
+                                        <div className="progress-bar__fill" style={{ width: `${progress.percent}%` }} />
+                                    </div>
+                                    <div className="progress-bar__info" style={{ color: 'var(--text-secondary)' }}>
+                                        <span>{Math.round(progress.percent)}% · {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
+                                        <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)} remaining</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {!isDownloading && (
+                            <div className="setup__actions">
+                                {models.find((m) => m.id === selectedModelId)?.downloaded ? (
+                                    <button
+                                        className="setup__download-btn"
+                                        onClick={onComplete}
+                                        id="use-model-btn"
+                                    >
+                                        <Check size={16} /> Use This Model
+                                    </button>
+                                ) : (
+                                    <button
+                                        className="setup__download-btn"
+                                        onClick={handleAction}
+                                        disabled={!selectedModelId}
+                                        id="download-model-btn"
+                                    >
+                                        <Download size={16} /> Download {models.find((m) => m.id === selectedModelId)?.name ?? 'Model'}
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -369,7 +426,9 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                 <div className="setup__success-icon-inner"><Check size={24} /></div>
                             </div>
                             <h1 className="setup__success-title">
-                                {models.find(m => m.id === selectedModelId)?.name || 'Model'} is ready to go!
+                                {(status.modelPath && models.find(m => status.modelPath?.includes(m.filename))?.name) || 
+                                 models.find(m => m.id === selectedModelId)?.name || 
+                                 'Model'} is ready to go!
                             </h1>
                             <p className="setup__success-subtitle">
                                 The model is now locally available and optimized for your hardware. You can start chatting or integrating it into your Local workflow immediately.
@@ -403,33 +462,41 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                     </div>
                 )}
 
-                {/* Progress Bar */}
-                {isDownloading && progress && (
-                    <div className="setup__progress animate-fadeIn" id="download-progress">
-                        <p style={{ color: 'var(--text-primary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-md)', textAlign: 'center' }}>
-                            Downloading {progress.filename}...
-                        </p>
-                        <div className="progress-bar">
-                            <div
-                                className="progress-bar__fill"
-                                style={{ width: `${progress.percent}%` }}
-                            />
-                        </div>
-                        <div className="progress-bar__info">
-                            <span>{formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
-                            <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)} remaining</span>
-                        </div>
-                    </div>
-                )}
-
-                {/* Loading state (downloading but no progress yet) */}
-                {isDownloading && !progress && (
-                    <div className="setup__progress animate-fadeIn">
-                        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center' }}>
-                            Starting download...
-                        </p>
-                        <div className="progress-bar">
-                            <div className="progress-bar__fill" style={{ width: '2%' }} />
+                {/* Engine Progress Bar (only shown for binary step) */}
+                {isDownloading && currentStep === 'binary' && (
+                    <div className="setup__progress-container animate-fadeIn">
+                        <div className="model-card model-card--downloading" style={{ padding: 'var(--space-xl)', width: '100%' }}>
+                            <div className="model-card__name" style={{ textAlign: 'center' }}>Inference Engine</div>
+                            <div className="model-card__description" style={{ textAlign: 'center' }}>
+                                Setting up the core AI platform for your system...
+                            </div>
+                            
+                            {!progress ? (
+                                <div className="setup__progress" id="download-progress">
+                                    <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)', textAlign: 'center', marginBottom: 'var(--space-md)' }}>
+                                        Starting download...
+                                    </p>
+                                    <div className="progress-bar">
+                                        <div className="progress-bar__fill" style={{ width: '2%' }} />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="setup__progress" id="download-progress">
+                                    <p style={{ color: 'var(--text-primary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-md)', textAlign: 'center', fontWeight: 'bold' }}>
+                                        {progress.filename}
+                                    </p>
+                                    <div className="progress-bar">
+                                        <div
+                                            className="progress-bar__fill"
+                                            style={{ width: `${progress.percent}%` }}
+                                        />
+                                    </div>
+                                    <div className="progress-bar__info" style={{ color: 'var(--text-secondary)', fontWeight: '500' }}>
+                                        <span>{Math.round(progress.percent)}% · {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
+                                        <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)} remaining</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

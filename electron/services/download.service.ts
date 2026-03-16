@@ -983,14 +983,18 @@ export class DownloadService extends EventEmitter {
                     res.pipe(file)
 
                     file.on('finish', () => {
-                        file.close(() => {
+                        req.destroy()
+                        file.destroy() // Explicitly destroy to release lock
+                        
+                        // Wait slightly to let OS close handle
+                        setTimeout(async () => {
                             if (aborted) {
                                 cleanup()
                                 return
                             }
 
                             const finalize = async () => {
-                                for (let attempt = 1; attempt <= 5; attempt++) {
+                                for (let attempt = 1; attempt <= 10; attempt++) {
                                     try {
                                         if (aborted) return
 
@@ -1013,20 +1017,20 @@ export class DownloadService extends EventEmitter {
                                         resolve()
                                         return
                                     } catch (err) {
-                                        if (attempt === 5) {
-                                            console.error(`[DownloadService] Error finalizing download ${downloadId} after 5 attempts:`, err)
+                                        if (attempt === 10) {
+                                            console.error(`[DownloadService] Error finalizing download ${downloadId} after 10 attempts:`, err)
                                             if (!aborted) cleanup()
                                             reject(err)
                                             return
                                         }
-                                        console.warn(`[DownloadService] Finalization attempt ${attempt} failed for ${downloadId}, retrying in 200ms...`)
-                                        await new Promise(r => setTimeout(r, 200))
+                                        console.warn(`[DownloadService] Finalization attempt ${attempt} failed for ${downloadId}, retrying in 1000ms...`)
+                                        await new Promise(r => setTimeout(r, 1000))
                                     }
                                 }
                             }
 
                             finalize()
-                        })
+                        }, 500) // Increased initial delay
                     })
 
                     file.on('error', (err) => {

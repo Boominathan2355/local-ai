@@ -224,8 +224,35 @@ export class SetupManager extends EventEmitter {
     private async downloadAndExtractBinary(url: string, archivePath: string): Promise<string> {
         try {
             const binaryDir = path.join(this.llamaDir, 'bin')
-            if (!existsSync(binaryDir)) {
+            if (existsSync(binaryDir)) {
+                console.log('[SetupManager] Cleaning up existing binary directory...')
+                const files = readdirSync(binaryDir)
+                for (const file of files) {
+                    try {
+                        const fullPath = path.join(binaryDir, file)
+                        if (statSync(fullPath).isDirectory()) {
+                            // Recursive delete not needed for simple bin/ folder, but safe
+                            continue 
+                        }
+                        unlinkSync(fullPath)
+                    } catch (e) { console.warn(`[SetupManager] Failed to delete ${file}:`, e) }
+                }
+            } else {
                 mkdirSync(binaryDir, { recursive: true })
+            }
+
+            if (IS_WINDOWS && existsSync(this.llamaDir)) {
+                console.log('[SetupManager] Cleaning up potential platform pollution in root...')
+                const rootFiles = readdirSync(this.llamaDir)
+                for (const file of rootFiles) {
+                    const fullPath = path.join(this.llamaDir, file)
+                    if (statSync(fullPath).isDirectory()) continue
+                    
+                    // Delete Linux leftovers (.so files and extensionless binaries)
+                    if (file.endsWith('.so') || (!file.includes('.') && !['LICENSE', 'COMMIT'].includes(file))) {
+                        try { unlinkSync(fullPath) } catch (e) { /* ignore */ }
+                    }
+                }
             }
 
             console.log('[SetupManager] Downloading binary from:', url)
@@ -366,6 +393,7 @@ export class SetupManager extends EventEmitter {
                         }
 
                         let asset: { name: string; browser_download_url: string } | undefined
+                        console.log(`[SetupManager] Platform Check: IS_WINDOWS=${IS_WINDOWS}, platform=${process.platform}`)
 
                         if (IS_WINDOWS) {
                             asset = assets.find((a) =>
@@ -498,15 +526,18 @@ export class SetupManager extends EventEmitter {
                     res.pipe(file)
 
                     file.on('finish', () => {
-                        req.destroy() // Explicitly destroy to clear timeouts
-                        file.close(() => {
+                        req.destroy()
+                        file.destroy() // Explicitly destroy to release lock
+
+                        // Wait slightly to let OS close handle
+                        setTimeout(async () => {
                             if (aborted) {
                                 cleanup()
                                 return
                             }
 
                             const finalize = async () => {
-                                for (let attempt = 1; attempt <= 5; attempt++) {
+                                for (let attempt = 1; attempt <= 10; attempt++) {
                                     try {
                                         if (aborted) return
 
@@ -521,20 +552,20 @@ export class SetupManager extends EventEmitter {
                                         resolve()
                                         return
                                     } catch (err) {
-                                        if (attempt === 5) {
-                                            console.error('[Setup] Failed to rename temp file after 5 attempts:', err)
+                                        if (attempt === 10) {
+                                            console.error('[Setup] Failed to rename temp file after 10 attempts:', err)
                                             if (!aborted) cleanup()
                                             reject(err)
                                             return
                                         }
-                                        console.warn(`[Setup] Rename attempt ${attempt} failed, retrying in 200ms...`)
-                                        await new Promise(r => setTimeout(r, 200))
+                                        console.warn(`[Setup] Rename attempt ${attempt} failed, retrying in 1000ms...`)
+                                        await new Promise(r => setTimeout(r, 1000))
                                     }
                                 }
                             }
 
                             finalize()
-                        })
+                        }, 500) // Increased initial delay
                     })
                 })
 
