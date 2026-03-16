@@ -12,8 +12,13 @@ import {
 } from 'lucide-react'
 
 import { MarkdownRenderer } from './MarkdownRenderer'
+import { StreamingIndicator } from './StreamingIndicator'
 import type { ChatMessage } from '../../types/chat.types'
 import { ReasoningBlock } from './ReasoningBlock'
+import { parseMCPContent, MCPContentSegment } from '../../utils/ai-parser'
+import { ToolCallCard } from '../mcp/ToolCallCard'
+import { TerminalOutput } from '../mcp/TerminalOutput'
+import { ToolChainView } from '../mcp/ToolChainView'
 
 import { VersionPager } from './VersionPager'
 
@@ -25,6 +30,8 @@ interface MessageBubbleProps {
     isLast?: boolean
     allMessages?: ChatMessage[]
     onSwitchVersion?: (messageId: string) => void
+    toolChain?: any[]
+    isStreaming?: boolean
 }
 
 interface DataCardProps {
@@ -47,7 +54,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     onReply,
     isLast,
     allMessages = [],
-    onSwitchVersion
+    onSwitchVersion,
+    toolChain = [],
+    isStreaming = false
 }) => {
     const isUser = message.role === 'user'
     const [copied, setCopied] = useState(false)
@@ -147,51 +156,91 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                 <button onClick={handleEditSave} className="message__edit-save">Save & Retry</button>
                             </div>
                         </div>
-                    ) : message.role === 'tool' ? (
-                        <div className="message__tool-container">
-                            <div className="message__tool-header">Tool Feedback</div>
-                            <pre className="message__tool-content">{message.content}</pre>
-                        </div>
-                    ) : !isUser && message.content.trim().startsWith('{') && message.content.includes('"tool_call"') ? (
-                        <div className="message__content">
-                            {(() => {
-                                try {
-                                    const parsed = JSON.parse(message.content.trim())
-                                    if (parsed.tool_call) {
-                                        return (
-                                            <div className="message__tool-call">
-                                                <div className="message__tool-call-header">
-                                                    <RotateCcw size={14} className="message__tool-call-icon" />
-                                                    <span>AI is using a tool</span>
-                                                </div>
-                                                <div className="message__tool-call-body">
-                                                    <div className="message__tool-call-name">{parsed.tool_call.name}</div>
-                                                    <div className="message__tool-call-args">
-                                                        {JSON.stringify(parsed.tool_call.arguments, null, 2)}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )
-                                    }
-                                } catch (e) {
-                                    // Fallback to markdown if parsing fails
-                                }
-                                return <MarkdownRenderer content={message.content} />
-                            })()}
-                        </div>
-                    ) : isUser ? (
-                        <div className="message__content message__content--user-markdown">
-                            <MarkdownRenderer content={message.content} />
-                        </div>
                     ) : (
-                        <div className="message__content message__content--markdown">
+                        <div className="message__content">
+                            {toolChain && toolChain.length > 0 && (
+                                <div className="tool-chain-container mb-2">
+                                    {toolChain.map((step, i) => (
+                                        <ToolCallCard
+                                            key={`${step.toolName}-${i}`}
+                                            toolName={step.toolName}
+                                            args={step.args}
+                                            status={step.status === 'running' ? 'calling' : step.status}
+                                            result={step.resultSummary}
+                                            durationMs={step.durationMs}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+
                             {message.reasoningContent && (
                                 <ReasoningBlock
                                     reasoningContent={message.reasoningContent}
                                     isThinking={message.isThinking}
                                 />
                             )}
-                            <MarkdownRenderer content={message.content} />
+                            {(() => {
+                                const segments = parseMCPContent(message.content)
+
+                                // Group consecutive tool calls into a chain
+                                const grouped: (MCPContentSegment | { type: 'tool_chain'; steps: any[]; totalDuration: number })[] = []
+                                let currentChain: any[] = []
+
+                                segments.forEach((seg, i) => {
+                                    if (seg.type === 'tool_call') {
+                                        currentChain.push(seg)
+                                    } else {
+                                        if (currentChain.length > 1) {
+                                            grouped.push({ type: 'tool_chain', steps: currentChain, totalDuration: 0 })
+                                        } else if (currentChain.length === 1) {
+                                            grouped.push(currentChain[0])
+                                        }
+                                        currentChain = []
+                                        grouped.push(seg)
+                                    }
+                                })
+
+                                if (currentChain.length > 1) {
+                                    grouped.push({ type: 'tool_chain', steps: currentChain, totalDuration: 0 })
+                                } else if (currentChain.length === 1) {
+                                    grouped.push(currentChain[0])
+                                }
+
+                                return grouped.map((item, idx) => {
+                                    if (item.type === 'text') {
+                                        return <MarkdownRenderer key={idx} content={item.content} />
+                                    }
+                                    if (item.type === 'tool_call') {
+                                        return <ToolCallCard
+                                            key={idx}
+                                            toolName={item.toolName}
+                                            args={item.args}
+                                            status="success"
+                                        />
+                                    }
+                                    if (item.type === 'tool_chain') {
+                                        return <ToolChainView
+                                            key={idx}
+                                            chain={{ steps: item.steps.map(s => ({ ...s, status: 'success', resultSummary: 'Executed' })), totalDurationMs: 0, conversationId: message.conversationId }}
+                                        />
+                                    }
+                                    if (item.type === 'tool_result') {
+                                        if (item.toolName === 'run_command' && item.success) {
+                                            return <TerminalOutput key={idx} command="Result" output={item.content} />
+                                        }
+                                        return <ToolCallCard
+                                            key={idx}
+                                            toolName={item.toolName}
+                                            args={{}}
+                                            result={item.content}
+                                            status={item.success ? 'success' : 'error'}
+                                            error={item.success ? undefined : item.content}
+                                        />
+                                    }
+                                    return null
+                                })
+                            })()}
+                            {isStreaming && <StreamingIndicator />}
                         </div>
                     )}
 

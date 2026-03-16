@@ -37,7 +37,7 @@ interface DownloadProgress {
 interface SetupStatus {
     hasBinary: boolean
     hasModel: boolean
-    llamaDir?: string
+    llamaDir: string
 }
 
 type SetupStep = 'binary' | 'model' | 'done'
@@ -64,7 +64,7 @@ function formatEta(seconds: number): string {
 export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
     const [models, setModels] = useState<DownloadableModel[]>([])
     const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
-    const [status, setStatus] = useState<SetupStatus>({ hasBinary: false, hasModel: false })
+    const [status, setStatus] = useState<SetupStatus>({ hasBinary: false, hasModel: false, llamaDir: '' })
     const [currentStep, setCurrentStep] = useState<SetupStep>('binary')
     const [progress, setProgress] = useState<DownloadProgress | null>(null)
     const [isDownloading, setIsDownloading] = useState(false)

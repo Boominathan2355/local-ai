@@ -918,6 +918,7 @@ export class DownloadService extends EventEmitter {
 
             const abort = (): void => {
                 aborted = true
+                console.log(`[DownloadService] Download cancelled: ${downloadId}`)
                 cleanup()
                 reject(new Error('Download cancelled'))
             }
@@ -931,9 +932,12 @@ export class DownloadService extends EventEmitter {
                     return
                 }
 
+                console.log(`[DownloadService] Starting download from: ${downloadUrl}`)
+
                 const client = downloadUrl.startsWith('https') ? https : http
-                const req = client.get(downloadUrl, (res) => {
+                const req = client.get(downloadUrl, { timeout: 30000 }, (res) => {
                     if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                        console.log(`[DownloadService] Redirecting to: ${res.headers.location}`)
                         startDownload(res.headers.location, redirectCount + 1)
                         return
                     }
@@ -943,6 +947,8 @@ export class DownloadService extends EventEmitter {
                         reject(new Error(`Download failed: HTTP ${res.statusCode}`))
                         return
                     }
+
+                    console.log(`[DownloadService] First chunk received for ${downloadId}`)
 
                     const total = parseInt(res.headers['content-length'] ?? '0', 10)
                     let downloaded = 0
@@ -986,7 +992,9 @@ export class DownloadService extends EventEmitter {
                                     throw new Error(`Download incomplete: expected ${total} bytes, got ${stats.size} bytes`)
                                 }
                                 renameSync(tempPath, destPath)
+                                console.log(`[DownloadService] Download complete: ${downloadId}`)
                             } catch (err) {
+                                console.error(`[DownloadService] Error finalizing download ${downloadId}:`, err)
                                 cleanup()
                                 reject(err)
                                 return
@@ -999,12 +1007,21 @@ export class DownloadService extends EventEmitter {
                     })
 
                     file.on('error', (err) => {
+                        console.error(`[DownloadService] File stream error for ${downloadId}:`, err)
                         cleanup()
                         reject(err)
                     })
                 })
 
+                req.on('timeout', () => {
+                    console.error(`[DownloadService] Download timed out for ${downloadId}`)
+                    req.destroy()
+                    cleanup()
+                    reject(new Error('Download timed out after 30 seconds'))
+                })
+
                 req.on('error', (err) => {
+                    console.error(`[DownloadService] Request error for ${downloadId}:`, err)
                     cleanup()
                     reject(err)
                 })

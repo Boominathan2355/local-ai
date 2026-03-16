@@ -1,4 +1,6 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, app } from 'electron'
+import path from 'path'
+import os from 'os'
 import http from 'http'
 import https from 'https'
 import { URL } from 'url'
@@ -10,13 +12,19 @@ import { DownloadService } from '../services/download.service'
 import { SearchService } from '../services/search.service'
 import { CloudModelService } from '../services/cloud-model.service'
 import { SetupManager } from '../services/setup.manager'
-// import { MCPToolsService } from '../services/mcp-tools.service'
+import { MCPToolsService } from '../services/mcp-tools.service'
+import { ToolController } from '../services/mcp/tool-controller'
+import { ParsedToolCall, ToolErrorCode } from '../../src/types/mcp.types'
 
 
 import type { ChatMessage } from '../../src/types/chat.types'
 import type { Conversation } from '../../src/types/conversation.types'
 
 
+
+import { FileSystemService } from '../services/filesystem.service'
+import { PathValidator } from '../services/mcp/path-validator'
+import { registerDocumentTools } from '../services/mcp/document-tools/index'
 
 const CHARS_PER_TOKEN = 4
 
@@ -112,6 +120,36 @@ async function generateSearchQuery(content: string, baseUrl: string, isCloud: bo
     }
 }
 
+function sanitizeToolArguments(raw: string): Record<string, any> {
+    if (!raw || !raw.trim()) return {}
+    try {
+        // Fast path — already valid JSON
+        return JSON.parse(raw)
+    } catch {
+        // Slow path — try to recover
+        let cleaned = raw
+        // Strip thinking/reasoning tokens from any model
+        cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '')
+        cleaned = cleaned.replace(/<\/?think>/gi, '')
+        cleaned = cleaned.replace(/\[INST\][\s\S]*?\[\/INST\]/gi, '')
+        // Strip markdown code fences
+        cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+        cleaned = cleaned.trim()
+        // Extract first complete JSON object
+        const match = cleaned.match(/\{[\s\S]*\}/)
+        if (match) {
+            try { return JSON.parse(match[0]) } catch { /* fall through */ }
+        }
+        // Extract first complete JSON array
+        const arrayMatch = cleaned.match(/\[[\s\S]*\]/)
+        if (arrayMatch) {
+            try { return JSON.parse(arrayMatch[0]) } catch { /* fall through */ }
+        }
+        console.error('[MCP] Could not parse tool arguments after sanitization:', raw)
+        return {}
+    }
+}
+
 /**
  * Registers all IPC handlers for main↔renderer communication.
  */
@@ -122,10 +160,48 @@ export function registerIpcHandlers(
     searchService: SearchService,
     cloudModelService: CloudModelService,
     setupManager: SetupManager,
+    mcpController: ToolController,
     initialModelId: string | null = null
 ): void {
     let activeAbortController: AbortController | null = null
     let activeModelId: string | null = initialModelId
+ 
+    // Load persisted per-tool enabled states into registry on startup
+    const initToolStates = async () => {
+        const settings = await storage.getSettings()
+        const storedEnabledTools: string[] | undefined = settings.mcpEnabledTools
+
+        if (storedEnabledTools === undefined || storedEnabledTools === null) {
+            // TRUE first run — no setting exists yet. 
+            // Use registry defaults (terminal tools already set to false above).
+            // Persist current registry state so next run loads from settings.
+            const allTools = mcpController.registry.getAllTools()
+            const defaultEnabled = allTools.filter(t => t.enabled).map(t => t.name)
+            await storage.setSettings({ mcpEnabledTools: defaultEnabled })
+        } else if (storedEnabledTools.length === 0) {
+            // Legacy "all enabled" sentinel — migrate to explicit list
+            const allTools = mcpController.registry.getAllTools()
+            // Enable all non-terminal tools, keep terminal disabled
+            for (const tool of allTools) {
+                const shouldEnable = tool.category !== 'terminal'
+                mcpController.registry.setToolEnabled(tool.name, shouldEnable)
+            }
+            const enabledNames = allTools
+                .filter(t => t.category !== 'terminal')
+                .map(t => t.name)
+            await storage.setSettings({ mcpEnabledTools: enabledNames })
+        } else {
+            // Normal run — apply persisted states
+            const allTools = mcpController.registry.getAllTools()
+            for (const tool of allTools) {
+                mcpController.registry.setToolEnabled(
+                    tool.name,
+                    storedEnabledTools.includes(tool.name)
+                )
+            }
+        }
+    }
+    initToolStates()
 
     // --- Conversations ---
     ipcMain.handle(IPC_CHANNELS.CONVERSATION_LIST, () => storage.getConversations())
@@ -144,10 +220,14 @@ export function registerIpcHandlers(
         return { success: true }
     })
     ipcMain.handle(IPC_CHANNELS.CONVERSATION_GET_MESSAGES, (_event, conversationId: string) => storage.getMessages(conversationId))
-    ipcMain.handle(IPC_CHANNELS.CONVERSATION_UPDATE_TITLE, (_event, id: string, title: string) => {
-        storage.updateConversationTitle(id, title)
+    ipcMain.handle(IPC_CHANNELS.CONVERSATION_UPDATE_TITLE, (_event, id: string, title: string) => storage.updateConversationTitle(id, title))
+    ipcMain.handle(IPC_CHANNELS.CONVERSATION_UPDATE, (_event, id: string, data: any) => {
+        storage.updateConversation(id, data)
         return { success: true }
     })
+
+
+
 
     // --- Model ---
     ipcMain.handle(IPC_CHANNELS.MODEL_GET_STATUS, () => {
@@ -190,6 +270,7 @@ export function registerIpcHandlers(
             mmprojPath: mmprojPath ?? undefined,
             ...metadata
         })
+
         try {
             await llamaServer.start()
             return {
@@ -201,6 +282,18 @@ export function registerIpcHandlers(
         } catch (err) {
             return { error: err instanceof Error ? err.message : 'Failed to start' }
         }
+    })
+
+    // --- MCP Permissions Bridge ---
+    mcpController.permissions.on('permission-requested', (request) => {
+        const windows = BrowserWindow.getAllWindows()
+        if (windows.length > 0) {
+            windows[0].webContents.send(IPC_CHANNELS.CHAT_TOOL_PERMISSIONS_REQUEST, request)
+        }
+    })
+
+    ipcMain.on(IPC_CHANNELS.CHAT_TOOL_PERMISSIONS_RESPONSE, (_event, response: { requestId: string, approved: boolean, always?: boolean }) => {
+        mcpController.permissions.resolvePermission(response)
     })
 
     ipcMain.handle(IPC_CHANNELS.DOWNLOAD_GET_MODELS, () => {
@@ -265,6 +358,68 @@ export function registerIpcHandlers(
     // --- System ---
     ipcMain.handle(IPC_CHANNELS.SYSTEM_GET_INFO, () => storage.getSystemInfo())
 
+    ipcMain.handle(IPC_CHANNELS.SYSTEM_SELECT_DIRECTORY, async (event) => {
+        const win = BrowserWindow.fromWebContents(event.sender)
+        if (!win) return { canceled: true, paths: [] }
+
+        const { dialog } = require('electron')
+        const result = await dialog.showOpenDialog(win, {
+            properties: ['openDirectory'],
+            title: 'Select a folder to add to sandbox'
+        })
+
+        return {
+            canceled: result.canceled,
+            paths: result.filePaths
+        }
+    })
+
+    // --- MCP Tool Management ---
+    ipcMain.handle(IPC_CHANNELS.MCP_GET_TOOLS, async () => {
+        const allTools = mcpController.registry.getAllTools()
+        console.log('[MCP_GET_TOOLS] tool count:', allTools.length, allTools.map(t => t.name))
+        
+        if (allTools.length === 0) {
+            console.warn('[MCP] WARNING: Registry is empty! Re-initializing tools...')
+            mcpController.registry.registerFileTools()
+            mcpController.registry.registerTerminalTools()
+            mcpController.registry.registerDocumentTools()
+        }
+
+        return allTools.map(tool => ({
+            name: tool.name,
+            category: tool.category,
+            description: tool.description,
+            enabled: tool.enabled,
+            permissionLevel: tool.permissionLevel,
+        }))
+    })
+
+    ipcMain.handle(IPC_CHANNELS.MCP_SET_TOOL_ENABLED,
+        async (_event, toolName: string, enabled: boolean) => {
+            // Update in-memory registry immediately
+            mcpController.registry.setToolEnabled(toolName, enabled)
+
+            // Persist to settings
+            const settings = await storage.getSettings()
+            const allTools = mcpController.registry.getAllTools()
+
+            // Build the new enabled list — only store names of ENABLED tools
+            // Empty array means "all enabled" — only write explicit list when
+            // something is actually disabled
+            const enabledNames = allTools
+                .filter(t => t.enabled)
+                .map(t => t.name)
+
+            const allEnabled = enabledNames.length === allTools.length
+            await storage.setSettings({
+                mcpEnabledTools: allEnabled ? [] : enabledNames
+            })
+
+            return { success: true, toolName, enabled }
+        }
+    )
+
     // --- Settings / Storage ---
     ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, () => storage.getSettings())
     ipcMain.handle(IPC_CHANNELS.SETTINGS_SET, (_event, settings) => storage.setSettings(settings))
@@ -275,7 +430,7 @@ export function registerIpcHandlers(
     })
 
     // --- Chat ---
-    ipcMain.handle(IPC_CHANNELS.CHAT_SEND_MESSAGE, async (event, conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean, retryId?: string, quotedMessageId?: string, quotedMessageText?: string) => {
+    ipcMain.handle(IPC_CHANNELS.CHAT_SEND_MESSAGE, async (event, conversationId: string, content: string, systemPrompt: string, images?: string[], searchEnabled?: boolean, retryId?: string, quotedMessageId?: string, quotedMessageText?: string, isAgentModeIn?: boolean, enabledToolCategoriesIn?: string[]) => {
         const window = BrowserWindow.fromWebContents(event.sender)
         if (!window) return { error: 'No window' }
 
@@ -441,7 +596,7 @@ export function registerIpcHandlers(
                 }
             } else {
                 // For local llama-server: build multimodal messages if images are present
-                let localMessages: Array<{ role: string; content: any }> = messages
+                let localMessages: Array<{ role: string; content: any; tool_call_id?: string; tool_calls?: any[] }> = messages
                 const hasImages = images && images.length > 0
 
                 if (hasImages) {
@@ -474,92 +629,377 @@ export function registerIpcHandlers(
                     }
                 }
 
-                // Autonomous agent capability
-                const mentionedTools = content.toLowerCase().match(/(web_search)/g) || []
-                const uniqueTools = Array.from(new Set(mentionedTools))
+                const convo = storage.getConversation(conversationId)
+                let enabledToolCategories = enabledToolCategoriesIn || (convo?.enabledToolCategories as string[]) || []
+                const isAgentMode = isAgentModeIn || (selectedModel?.tier === 'agent')
+
+                // Build OpenAI-format tools for native tool calling
+                let tools: any[] | undefined = undefined
+
+                if (isAgentMode) {
+                    const allToolDefs = mcpController.registry.getToolDefinitionsOpenAI()
+
+                    if (enabledToolCategories.length === 0) {
+                        enabledToolCategories = ['file_control', 'document_creator', 'web_search']
+                        // NOTE: terminal is intentionally excluded from default — user must opt in
+                    }
+
+                    // Filter to only enabled categories AND respect individual enabled state
+                    const enabledToolDefs = allToolDefs.filter(td => {
+                        const toolDef = mcpController.registry.getTool(td.function.name)
+                        if (!toolDef) return false
+                        // Must pass BOTH category filter AND individual enabled state
+                        return enabledToolCategories.includes(toolDef.category) && toolDef.enabled
+                    })
+                    // Add web_search if enabled
+                    if (enabledToolCategories.includes('web_search')) {
+                        enabledToolDefs.push(WEB_SEARCH_TOOL as any)
+                    }
+                    if (enabledToolDefs.length > 0) {
+                        tools = enabledToolDefs
+                    }
+                    console.log(`[Chat] Native tool calling: ${tools?.length ?? 0} tools provided to model`)
+                }
+
+                // When building tools[] for llama.cpp, if terminal category is requested
+                // but all terminal tools are disabled, send a system note:
+                const terminalRequested = enabledToolCategories.includes('terminal')
+                const terminalToolsEnabled = tools?.some(t => {
+                    const def = toolController.registry.getTool(t.function.name)
+                    return def?.category === 'terminal' && def?.enabled
+                })
+
+                if (terminalRequested && !terminalToolsEnabled) {
+                    // Inject into system prompt so model knows why
+                    systemPrompt += '\n\nNote: Terminal tools are currently disabled. ' +
+                        'The user must enable them in MCP Tool Center → Tool Catalog before ' +
+                        'you can run commands.'
+                }
+
+                const allowedPaths = [
+                    os.homedir(),
+                    app.getPath('userData'),
+                    ...(settings.mcpAllowedPaths || [])
+                ]
 
                 let toolInstructions = ''
-                if (uniqueTools.includes('web_search')) {
-                    toolInstructions = `\n\n## Tools Available\nYou have access to the following tools based on the user's request. To use them, you MUST follow the format below precisely.\n`
-                    toolInstructions += `- web_search: Search the web for real-time information. Usage: <tool_call>web_search|{"query": "search query"}</tool_call>\n`
-                    toolInstructions += `\nTo call a tool, you MUST use the exact format: <tool_call>TOOL_NAME|{"arg": "val"}</tool_call>\n` +
-                        `IMPORTANT:\n1. Use the EXACT tool name (lowercase).\n2. Arguments MUST be a single-line valid JSON object.\n3. Include NOTHING else inside the <tool_call> tags except NAME|JSON.`
+                if (isAgentMode && tools && tools.length > 0) {
+                    toolInstructions = `\n\n[SYSTEM: AGENT MODE ACTIVE]
+- TOOLS: ${tools.map(t => t.function.name).join(', ')}.
+- DIR: Use 'create_directory' for folders. Never 'create_file'.
+- FILE: Use 'write_file' or 'create_file' for content.
+- AUTH: Full access granted. Use absolute paths.
+- ACTION: Execute tools IMMEDIATELY. Do not ask for permission. Proceed without ceremony.`
                 }
 
                 const finalPrompt = `${systemPrompt}${toolInstructions}`
-                let localMsgs = localMessages.map(m => m.role === 'system' ? { ...m, content: finalPrompt } : m)
-                if (!localMsgs.some(m => m.role === 'system')) {
-                    localMsgs.unshift({ role: 'system', content: finalPrompt })
+                // Build history from messages (excluding system prompt which is prepended in runGeneration)
+                const history = localMessages.filter(m => m.role !== 'system')
+                const win = window
+                const toolController = mcpController
+                const signal = activeAbortController.signal
+
+                // Set up the local tooling services
+                const toolSvc = new MCPToolsService(allowedPaths)
+
+                const addSandboxPath = async (newPath: string): Promise<void> => {
+                    const settings = await storage.getSettings()
+                    const existing: string[] = settings.mcpAllowedPaths || []
+
+                    // Deduplicate — don't add if already present
+                    if (existing.some(p => path.resolve(p) === path.resolve(newPath))) return
+
+                    const updated = [...existing, newPath]
+                    await storage.setSettings({ mcpAllowedPaths: updated })
+
+                    // Hot-reload path validator — no restart needed
+                    toolSvc.updateAllowedPaths([
+                        ...updated,
+                        app.getPath('userData')
+                    ])
+                }
+                const executeTerminalTool = async (name: string, args: any) => await toolSvc.runCommand(args.command, args.cwd)
+                const docValidator = new PathValidator(allowedPaths)
+                const docFs = new FileSystemService()
+                const executeDocumentTool = registerDocumentTools(toolController, docFs, docValidator)
+                const executeWebSearch = async (_name: string, _args: any) => {
+                    throw new Error('web_search should be handled before tool execution')
+                }
+                const executeFileTool = async (name: string, args: any) => {
+                    if (name === 'list_directory') return await toolSvc.listDirectory(args.dir_path ?? args.path)
+                    if (name === 'create_directory') return await toolSvc.createDirectory(args.dir_path ?? args.path)
+                    if (name === 'delete_directory') return await toolSvc.deleteDirectory(args.dir_path ?? args.path)
+                    if (name === 'read_file') return await toolSvc.readFile(args.file_path ?? args.path)
+                    if (name === 'write_file') return await toolSvc.writeFile(args.file_path ?? args.path, args.content)
+                    if (name === 'create_file') return await toolSvc.createFile(args.file_path ?? args.path, args.content)
+                    if (name === 'delete_file') return await toolSvc.deleteFile(args.file_path ?? args.path)
+                    if (name === 'rename') return await toolSvc.rename(args.old_path, args.new_path)
+                    if (name === 'copy_file') return await toolSvc.copyFile(args.source, args.destination)
+                    if (name === 'search_files') return await toolSvc.searchFiles(args.path, args.pattern, args.max_results)
+                    if (name === 'count_files') return await toolSvc.countFiles(args.path, args.recursive)
+                    if (name === 'file_details') return await toolSvc.fileDetails(args.path)
+                    throw new Error(`Execution of tool ${name} is not implemented natively yet.`)
                 }
 
-                console.log(`[Chat] Payload ready. Prompt length: ${finalPrompt.length}. Tools: ${mentionedTools.join(', ')}`)
+                const MAX_TOOL_ITERATIONS = 10
+                let loopCount = 0
 
-                let toolCallCount = 0
-                const MAX_TOOL_CALLS = 5
+                const runGeneration = async (): Promise<void> => {
+                    if (signal.aborted) return
 
-                while (toolCallCount < MAX_TOOL_CALLS) {
-                    console.log(`[Chat] Iteration ${toolCallCount + 1}. Message count: ${localMsgs.length}`)
-                    assistantContent = await streamCompletion(llamaServer.baseUrl, localMsgs, activeAbortController.signal, (token) => {
-                        assistantContent += token
-                        window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token, done: false })
-                    }, ["<|user|>", "user:", "<|assistant|>", "assistant:"], settings.temperature, settings.maxTokens)
+                    const result = await streamCompletion(
+                        llamaServer.baseUrl,
+                        [{ role: 'system', content: finalPrompt }, ...history],
+                        signal,
+                        (token) => win.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, {
+                            conversationId,
+                            token,
+                            type: 'text'
+                        }),
+                        images || [],
+                        settings.temperature,
+                        settings.maxTokens,
+                        tools || [],
+                        settings
+                    )
 
-                    // Check for tool call patterns in the generated content (case-insensitive and flexible)
-                    // Supports: <tool_call>name|{...}</tool_call>  OR  <tool_call>name{...}</tool_call>  OR without closing tag
-                    const toolCallMatch = assistantContent.match(/<tool_call>\s*([a-zA-Z_]+)\s*(?:\|\s*)?(\{[\s\S]*?\})\s*(?:<\/tool_call>|$)/i)
-                    if (toolCallMatch) {
-                        toolCallCount++
-                        let toolName = toolCallMatch[1].trim().toLowerCase()
-                        let toolArgsStr = toolCallMatch[2].trim()
+                    assistantContent = result.content
 
-                        // Map common hallucinations or variations
-                        if (toolName.includes('run_command')) toolName = 'run_command'
-                        if (toolName.includes('web_search')) toolName = 'web_search'
-                        if (toolName.includes('read_file')) toolName = 'read_file'
-                        if (toolName.includes('write_file')) toolName = 'write_file'
-                        if (toolName.includes('list_directory')) toolName = 'list_directory'
+                    // ── Tool calling turn ──────────────────────────────────────────────────
+                    const hasToolCalls = result.toolCalls.length > 0
+                    const wantsToolExecution = result.finishReason === 'tool_calls' || 
+                        (result.finishReason === 'stop' && hasToolCalls) ||
+                        (result.finishReason === 'length' && hasToolCalls)
 
-                        try {
-                            // Attempt to fix common non-JSON hallucinations like {pwd} or {/path/to/file}
-                            if (toolArgsStr.startsWith('{') && toolArgsStr.endsWith('}') && !toolArgsStr.includes('"') && !toolArgsStr.includes(':')) {
-                                const rawVal = toolArgsStr.slice(1, -1).trim()
-                                if (toolName === 'web_search') toolArgsStr = JSON.stringify({ query: rawVal })
-                            }
+                    if (wantsToolExecution) {
 
-                            const args = JSON.parse(toolArgsStr)
-                            let resultText = ''
-
-                            if (toolName === 'web_search' && (settings.serperApiKey || settings.tavilyApiKey)) {
-                                window.webContents.send(IPC_CHANNELS.CHAT_SEARCH_STATUS, { conversationId, status: `Agent calling search: ${args.query}...` })
-                                const results = await searchService.search(args.query, {
-                                    serperApiKey: settings.serperApiKey,
-                                    tavilyApiKey: settings.tavilyApiKey
-                                }, activeAbortController.signal)
-                                resultText = results.length > 0
-                                    ? `Search Results for "${args.query}":\n\n${results.map(r => `Title: ${r.title}\nSnippet: ${r.snippet}`).join('\n\n')}`
-                                    : 'No results found.'
-                            } else {
-                                resultText = `Tool "${toolName}" is not available.`
-                            }
-
-                            // Add the turns to local history
-                            localMsgs.push({ role: 'assistant', content: assistantContent })
-                            localMsgs.push({ role: 'user', content: `[TOOL_RESULT: ${toolName}]\n${resultText}` })
-
-                            // Reset assistant content for next turn
-                            assistantContent = ''
-                            window.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, { conversationId, token: `\n\n*(Processing ${toolName} results...)*\n\n`, done: false })
-                            continue
-                        } catch (error: any) {
-                            console.error('[Chat] Tool execution error:', error)
-                            localMsgs.push({ role: 'system', content: `Error executing tool: ${error.message}` })
-                            break // Exit loop on error
+                        if (loopCount >= MAX_TOOL_ITERATIONS) {
+                            console.error('[MCP] Tool loop exceeded max iterations, forcing stop')
+                            win.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, {
+                                conversationId,
+                                token: '\n\n[Tool loop limit reached]',
+                                type: 'text'
+                            })
+                            return
                         }
-                    } else {
-                        // No tool call found in this turn, we are finally done
-                        break
+                        loopCount++
+
+                        // Append assistant message that contains the tool_calls
+                        history.push({
+                            role: 'assistant',
+                            content: result.content || null,
+                            tool_calls: result.toolCalls.map(tc => ({
+                                id: tc.id,
+                                type: 'function',
+                                function: { name: tc.function.name, arguments: tc.function.arguments }
+                            }))
+                        })
+
+                        // Execute each tool call sequentially
+                        for (const tc of result.toolCalls) {
+                            if (signal.aborted) break
+
+                            // Notify renderer — tool is starting
+                            win.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, {
+                                conversationId,
+                                type: 'tool_start',
+                                toolName: tc.function.name,
+                                input: sanitizeToolArguments(tc.function.arguments)
+                            })
+
+                            let toolResultContent: string
+
+                            try {
+                                const parsed = {
+                                    toolName: tc.function.name,
+                                    args: sanitizeToolArguments(tc.function.arguments),
+                                    rawText: ''
+                                }
+
+                                let toolResult = await toolController.execute(
+                                    parsed,
+                                    conversationId,
+                                    async (name: string, args: Record<string, any>) => {
+                                        const toolDef = toolController.registry.getTool(name)
+                                        const category = toolDef?.category
+
+                                        if (name === 'web_search')           return executeWebSearch(name, args)
+                                        if (category === 'terminal')         return executeTerminalTool(name, args)
+                                        if (category === 'document_creator') return executeDocumentTool(name, args)
+                                        if (category === 'file_control')     return executeFileTool(name, args)
+
+                                        // Fallback — try each executor and return first success
+                                        console.warn(`[MCP] Unknown tool category for "${name}", trying all executors`)
+                                        try { return await executeFileTool(name, args) } catch {}
+                                        try { return await executeDocumentTool(name, args) } catch {}
+                                        try { return await executeTerminalTool(name, args) } catch {}
+                                        throw new Error(`No executor found for tool: ${name}`)
+                                    }
+                                )
+
+                                // Check if tool failed due to path being outside sandbox
+                                if (
+                                    !toolResult.success &&
+                                    toolResult.errorCode === ToolErrorCode.PATH_OUTSIDE_SANDBOX &&
+                                    toolResult.args?.path
+                                ) {
+                                    const requestedPath = toolResult.args.path as string
+                                    // Determine the directory to add (if file path, use its parent dir)
+                                    // Use path.extname to detect files vs directories — works on all platforms
+                                    // A path with no extension is likely a directory; one with extension is a file
+                                    const hasExtension = path.extname(requestedPath).length > 0
+                                    const dirToAdd = hasExtension
+                                        ? path.dirname(requestedPath)
+                                        : requestedPath
+
+                                    // Sensitive path patterns — never allow these to reach the approval dialog
+                                    const SENSITIVE_PATH_PATTERNS = [
+                                        // Unix — system files
+                                        /\/etc\/(?:passwd|shadow|sudoers|hosts|ssh)/i,
+                                        /\/proc\//i,
+                                        /\/sys\//i,
+                                        /\/dev\//i,
+
+                                        // Unix — credentials and keys
+                                        /[\/\\]\.ssh[\/\\]/i,
+                                        /[\/\\]\.gnupg[\/\\]/i,
+                                        /[\/\\]\.aws[\/\\]/i,
+                                        /[\/\\]\.config[\/\\](?:google-chrome|chromium|mozilla)/i,
+
+                                        // Unix — browser profiles
+                                        /[\/\\]\.mozilla[\/\\]/i,
+
+                                        // Unix — macOS sensitive
+                                        /[\/\\]Library[\/\\]Keychains/i,
+                                        /[\/\\]Library[\/\\]Application Support[\/\\](?:Google|Mozilla)/i,
+
+                                        // Windows — system directories
+                                        /[a-zA-Z]:[\/\\]Windows[\/\\]System32/i,
+                                        /[a-zA-Z]:[\/\\]Windows[\/\\]SysWOW64/i,
+                                        /[a-zA-Z]:[\/\\]Windows[\/\\]System/i,
+
+                                        // Windows — credential stores
+                                        /[\/\\]AppData[\/\\]Roaming[\/\\]Microsoft[\/\\](?:Credentials|Protect|Vault)/i,
+                                        /[\/\\]AppData[\/\\]Local[\/\\]Microsoft[\/\\](?:Credentials|Vault)/i,
+
+                                        // Windows — browser credentials
+                                        /[\/\\]AppData[\/\\](?:Local|Roaming)[\/\\](?:Google|Mozilla|Microsoft)[\/\\]/i,
+
+                                        // Windows — SSH keys
+                                        /[\/\\]\.ssh[\/\\]/i,
+                                        /[\/\\]OpenSSH[\/\\]/i,
+
+                                        // Windows — registry hives (if somehow path-accessed)
+                                        /[a-zA-Z]:[\/\\]Windows[\/\\]System32[\/\\]config[\/\\](?:SAM|SYSTEM|SECURITY)/i,
+                                    ]
+
+                                    const isSensitivePath = SENSITIVE_PATH_PATTERNS.some(pattern =>
+                                        pattern.test(dirToAdd)
+                                    )
+
+                                    if (isSensitivePath) {
+                                        toolResultContent = `Access denied: "${dirToAdd}" is a protected system path and cannot be added to the sandbox.`
+                                        // Skip approval dialog entirely — fall through to append tool result
+                                    } else {
+                                        // Ask user via existing permission UI
+                                        const approved = await toolController.permissions.requestSandboxApproval(
+                                            dirToAdd,
+                                            conversationId
+                                        )
+
+                                        if (approved) {
+                                            // Persist and hot-reload
+                                            await addSandboxPath(dirToAdd)
+
+                                            // Retry the original tool call now that path is allowed
+                                            const retryStartTime = Date.now()
+                                            try {
+                                                const retryParsed = {
+                                                    toolName: tc.function.name,
+                                                    args: sanitizeToolArguments(tc.function.arguments),
+                                                    rawText: ''
+                                                }
+                                                toolResult = await toolController.execute(
+                                                    retryParsed,
+                                                    conversationId,
+                                                    async (name: string, args: Record<string, any>) => {
+                                                        const toolDef = toolController.registry.getTool(name)
+                                                        const category = toolDef?.category
+
+                                                        if (name === 'web_search')           return executeWebSearch(name, args)
+                                                        if (category === 'terminal')         return executeTerminalTool(name, args)
+                                                        if (category === 'document_creator') return executeDocumentTool(name, args)
+                                                        if (category === 'file_control')     return executeFileTool(name, args)
+
+                                                        console.warn(`[MCP] Unknown tool category for "${name}", trying all executors`)
+                                                        try { return await executeFileTool(name, args) } catch {}
+                                                        try { return await executeDocumentTool(name, args) } catch {}
+                                                        try { return await executeTerminalTool(name, args) } catch {}
+                                                        throw new Error(`No executor found for tool: ${name}`)
+                                                    }
+                                                )
+                                            } catch (retryErr: any) {
+                                                toolResult = {
+                                                    success: false,
+                                                    toolName: tc.function.name,
+                                                    args: sanitizeToolArguments(tc.function.arguments),
+                                                    error: retryErr.message,
+                                                    durationMs: Date.now() - retryStartTime
+                                                }
+                                            }
+
+                                            toolResultContent = toolResult.success
+                                                ? (typeof toolResult.result === 'string'
+                                                    ? toolResult.result
+                                                    : JSON.stringify(toolResult.result, null, 2))
+                                                : `Error after sandbox approval: ${toolResult.error}`
+                                        } else {
+                                            // User denied — tell LLM clearly
+                                            toolResultContent = `Access denied: The user did not allow access to "${dirToAdd}". Do not retry this path.`
+                                        }
+                                    }
+                                } else {
+                                    // Normal result serialization
+                                    toolResultContent = toolResult.success
+                                        ? (typeof toolResult.result === 'string'
+                                            ? toolResult.result
+                                            : JSON.stringify(toolResult.result, null, 2))
+                                        : `Error: ${toolResult.error || 'Tool execution failed'}`
+                                }
+
+                            } catch (err: any) {
+                                console.error(`[MCP] Tool execution error (${tc.function.name}):`, err)
+                                toolResultContent = `Error: ${err.message || 'Unknown error'}`
+                            }
+
+                            // Append tool result to history so LLM sees it next turn
+                            history.push({
+                                role: 'tool',
+                                tool_call_id: tc.id,
+                                content: toolResultContent
+                            })
+
+                            // Notify renderer — tool is done
+                            win.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, {
+                                conversationId,
+                                type: 'tool_end',
+                                toolName: tc.function.name,
+                                result: toolResultContent.slice(0, 300) // preview only
+                            })
+                        }
+
+                        // Loop — send updated history back to LLM for final response
+                        if (!signal.aborted) {
+                            await runGeneration()
+                        }
+                        return
                     }
-                } // End while
+
+                    // ── Final text response turn ───────────────────────────────────────────
+                    // (No tool_calls — LLM gave its final answer, runGeneration is done)
+                }
+
+                await runGeneration()
             } // End else (local model logic)
 
             console.log(`[Chat] Generation complete, length: ${assistantContent.length}`)
@@ -666,69 +1106,159 @@ export function registerIpcHandlers(
             downloadService.removeListener('progress', prog)
         }
     })
-    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CANCEL, (_event, id) => {
+    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CANCEL, (_event, id: string) => {
+        console.log(`[IPC] Received DOWNLOAD_CANCEL for: ${id}`)
+        if (id === 'engine' || id === 'binary') {
+            setupManager.cancelDownload('binary')
+        } else if (id.startsWith('model:')) {
+            downloadService.cancelDownload(id)
+        } else {
+            // Try both just in case
+            setupManager.cancelDownload(id)
+            downloadService.cancelDownload(id)
+        }
         return { success: true }
     })
 
 }
 
-function streamCompletion(
-    baseUrl: string,
-    messages: Array<{ role: string; content: any }>,
+/**
+ * Structured result from streamCompletion, supporting both text and tool calls.
+ */
+interface StreamCompletionResult {
+    content: string
+    finishReason: string
+    toolCalls: Array<{
+        id: string
+        type: string
+        function: { name: string; arguments: string }
+    }>
+}
+
+async function streamCompletion(
+    endpoint: string,
+    messages: any[],
     signal: AbortSignal,
     onToken: (token: string) => void,
-    stop: string[] = [],
-    temperature = 0.7,
-    maxTokens = 1024
-): Promise<string> {
-    return new Promise((resolve, reject) => {
-        if (signal.aborted) return reject(new Error('aborted'))
-        const body = JSON.stringify({
-            messages,
-            stream: true,
-            temperature,
-            max_tokens: maxTokens,
-            stop
-        })
-        const url = new URL('/v1/chat/completions', baseUrl)
-        console.log(`[streamCompletion] POST ${url.toString()} - Body size: ${Buffer.byteLength(body)}`)
-        const req = http.request({
-            hostname: url.hostname,
-            port: url.port,
-            path: url.pathname,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Length': Buffer.byteLength(body)
-            }
-        }, (res) => {
-            let acc = ''
-            let buffer = ''
-            res.on('data', (chunk) => {
-                buffer += chunk.toString()
-                const lines = buffer.split('\n')
-                buffer = lines.pop() ?? ''
-                for (const line of lines) {
-                    const trimmed = line.trim()
-                    if (!trimmed || !trimmed.startsWith('data: ')) continue
-                    const data = trimmed.slice(6)
-                    if (data === '[DONE]') break
-                    try {
-                        const parsed = JSON.parse(data)
-                        const token = parsed.choices?.[0]?.delta?.content || ''
-                        if (token) {
-                            acc += token
-                            onToken(token)
-                        }
-                    } catch { /* skip */ }
-                }
-            })
-            res.on('error', (e) => reject(e))
-            res.on('end', () => resolve(acc))
-        })
-        signal.addEventListener('abort', () => req.destroy())
-        req.on('error', (e) => reject(e))
-        req.write(body)
-        req.end()
+    images: string[],
+    temperature: number | undefined,
+    maxTokens: number | undefined,
+    tools: any[],
+    settings?: any
+): Promise<StreamCompletionResult> {
+    const hasTools = Array.isArray(tools) && tools.length > 0
+
+    const body: Record<string, any> = {
+        model: settings?.modelName || 'local-model',
+        messages,
+        stream: true,
+        temperature: temperature ?? 0.7,
+        max_tokens: maxTokens ?? 2048,
+    }
+
+    if (hasTools) {
+        body.tools = tools
+        body.tool_choice = 'auto'
+    }
+
+    const response = await fetch(`${endpoint}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal
     })
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => response.statusText)
+        throw new Error(`LLM request failed (${response.status}): ${errorText}`)
+    }
+
+    if (!response.body) {
+        throw new Error('No response body from LLM endpoint')
+    }
+
+    // Accumulate tool_call fragments indexed by their stream index
+    const accToolCalls: Record<number, {
+        id: string
+        type: string
+        function: { name: string; arguments: string }
+    }> = {}
+
+    let accText = ''
+    let finishReason = 'stop'
+    let buffer = ''
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            // Keep last incomplete line in buffer
+            buffer = lines.pop() ?? ''
+
+            for (const line of lines) {
+                const trimmed = line.trim()
+                if (!trimmed || !trimmed.startsWith('data:')) continue
+
+                const dataStr = trimmed.slice(5).trim()
+                if (dataStr === '[DONE]') break
+
+                let chunk: any
+                try {
+                    chunk = JSON.parse(dataStr)
+                } catch {
+                    continue // skip malformed chunk
+                }
+
+                const choice = chunk.choices?.[0]
+                if (!choice) continue
+
+                // Capture finish reason whenever it appears
+                if (choice.finish_reason) {
+                    finishReason = choice.finish_reason
+                }
+
+                const delta = choice.delta
+                if (!delta) continue
+
+                // ── Text token ───────────────────────────────────────────
+                if (typeof delta.content === 'string' && delta.content.length > 0) {
+                    accText += delta.content
+                    onToken(delta.content)
+                }
+
+                // ── Tool call fragments ───────────────────────────────────
+                if (Array.isArray(delta.tool_calls)) {
+                    for (const tc of delta.tool_calls) {
+                        const idx: number = tc.index ?? 0
+                        if (!accToolCalls[idx]) {
+                            accToolCalls[idx] = {
+                                id: '',
+                                type: 'function',
+                                function: { name: '', arguments: '' }
+                            }
+                        }
+                        const slot = accToolCalls[idx]
+                        if (tc.id)                       slot.id = tc.id
+                        if (tc.type)                     slot.type = tc.type
+                        if (tc.function?.name)           slot.function.name += tc.function.name
+                        if (tc.function?.arguments)      slot.function.arguments += tc.function.arguments
+                    }
+                }
+            }
+        }
+    } finally {
+        reader.releaseLock()
+    }
+
+    return {
+        content: accText,
+        finishReason,
+        toolCalls: Object.values(accToolCalls).filter(tc => tc.function.name)
+    }
 }

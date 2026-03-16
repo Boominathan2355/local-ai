@@ -9,7 +9,7 @@ import { DownloadService } from '../services/download.service'
 import { SetupManager } from '../services/setup.manager'
 import { SearchService } from '../services/search.service'
 import { CloudModelService } from '../services/cloud-model.service'
-// import { MCPToolsService } from '../services/mcp-tools.service'
+import { ToolController } from '../services/mcp/tool-controller'
 import { registerIpcHandlers } from '../ipc/handlers'
 import { IPC_CHANNELS } from '../ipc/channels'
 
@@ -27,7 +27,7 @@ let downloadService: DownloadService | null = null
 let setupManager: SetupManager | null = null
 let searchService: SearchService | null = null
 let cloudModelService: CloudModelService | null = null
-// let mcpToolsService: MCPToolsService | null = null
+let mcpController: ToolController | null = null
 
 function createWindow(): void {
     mainWindow = new BrowserWindow({
@@ -76,7 +76,9 @@ function initServices(): void {
     cloudModelService = new CloudModelService()
 
     const settings = storage.getSettings()
-    // mcpToolsService = new MCPToolsService(settings.mcpAllowedPaths || [os.homedir()])
+
+    // Initialize MCP
+    mcpController = new ToolController(storage, settings.mcpAutoApproveReads || false)
 
     const initialModelPath = downloadService.getFirstAvailableModelPath()
     let initialModelId: string | null = null
@@ -120,15 +122,15 @@ function initServices(): void {
         console.log('[LlamaServer]', log)
     })
 
-    if (llamaServer && storage && downloadService && searchService && cloudModelService && setupManager) {
-        registerIpcHandlers(llamaServer, storage, downloadService, searchService, cloudModelService, setupManager, initialModelId)
+    if (llamaServer && storage && downloadService && searchService && cloudModelService && setupManager && mcpController) {
+        registerIpcHandlers(llamaServer, storage, downloadService, searchService, cloudModelService, setupManager, mcpController, initialModelId)
     }
 
     storage.on('settingsChanged', (settings) => {
         mainWindow?.webContents.send(IPC_CHANNELS.SETTINGS_CHANGED, settings)
-        // if (mcpToolsService) {
-        //     mcpToolsService.updateAllowedPaths(settings.mcpAllowedPaths || [os.homedir()])
-        // }
+        if (mcpController) {
+            mcpController.permissions.setAutoApproveReads(settings.mcpAutoApproveReads || false)
+        }
     })
 
     if (setupManager.isBinaryDownloaded() && initialModelPath) {

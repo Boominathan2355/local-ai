@@ -4,6 +4,7 @@ import { getLocalAI } from '../helpers/ipc.helper'
 import type { ChatMessage } from '../types/chat.types'
 import { DEFAULT_SYSTEM_PROMPT } from '../types/settings.types'
 import { parseThinkingProcess } from '../utils/ai-parser'
+import { ToolCategory, ToolPermissionRequest, ToolChainStep } from '../types/mcp.types'
 
 const parseMessages = (msgs: ChatMessage[], supportsThinking: boolean): ChatMessage[] => {
     return msgs.map(m => {
@@ -22,7 +23,7 @@ interface UseChatReturn {
     isThinking: boolean
     error: string | null
     searchStatus: string | null
-    sendMessage: (content: string, options?: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean; quotedMessageId?: string; quotedMessageText?: string }, retryId?: string) => void
+    sendMessage: (content: string, options?: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean; quotedMessageId?: string; quotedMessageText?: string; isAgentMode?: boolean }, retryId?: string) => void
     stopGeneration: () => void
     clearError: () => void
     retryMessage: (messageId: string) => void
@@ -30,7 +31,10 @@ interface UseChatReturn {
     switchVersion: (messageId: string) => Promise<void>
     approveTool: (requestId: string) => void
     denyTool: (requestId: string) => void
-    pendingToolRequest: { requestId: string; toolName: string; args: any } | null
+    pendingToolRequest: ToolPermissionRequest | null
+    enabledToolCategories: ToolCategory[]
+    onCategoriesChange: (categories: ToolCategory[]) => void
+    activeToolChain: ToolChainStep[]
 }
 
 /**
@@ -43,7 +47,9 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
     const [isThinking, setIsThinking] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [searchStatus, setSearchStatus] = useState<string | null>(null)
-    const [pendingToolRequest, setPendingToolRequest] = useState<{ requestId: string; toolName: string; args: any } | null>(null)
+    const [pendingToolRequest, setPendingToolRequest] = useState<ToolPermissionRequest | null>(null)
+    const [enabledToolCategories, setEnabledToolCategories] = useState<ToolCategory[]>([])
+    const [activeToolChain, setActiveToolChain] = useState<ToolChainStep[]>([])
 
     const streamingRef = useRef(false)
     const cleanupRef = useRef<Array<() => void>>([])
@@ -57,14 +63,29 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
         streamingRef.current = false
         setError(null)
         setSearchStatus(null)
+        setActiveToolChain([])
 
         if (!conversationId) {
             setMessages([])
+            // Landing page — set default tools locally so they can be toggled before first message
+            if (enabledToolCategories.length === 0) {
+                setEnabledToolCategories(['file_control', 'document_creator'])
+            }
             return
         }
 
         const api = getLocalAI()
         if (!api) return
+
+        api.conversations.list().then(convs => {
+            const current = convs.find(c => c.id === conversationId)
+            if (current && current.enabledToolCategories) {
+                setEnabledToolCategories(current.enabledToolCategories as ToolCategory[])
+            } else {
+                // New conversation — safe defaults (no terminal)
+                setEnabledToolCategories(['file_control', 'document_creator'])
+            }
+        })
 
         api.conversations.getMessages(conversationId).then((msgs) => {
             setMessages(parseMessages(msgs, supportsThinking))
@@ -78,12 +99,47 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
 
         const cleanupToken = api.chat.onStreamToken((event) => {
             if (event.conversationId === conversationId) {
+                // Handle native tool events
+                if (event.type === 'tool_start') {
+                    setSearchStatus(`Running tool: ${event.toolName}...`)
+                    
+                    setActiveToolChain(prev => {
+                        const toolName = event.toolName || ''
+                        const exists = prev.some(t => t.toolName === toolName && t.status === 'running')
+                        if (exists) return prev
+                        return [...prev, {
+                            toolName,
+                            args: (event as any).input || {},
+                            status: 'running',
+                            resultSummary: '',
+                            durationMs: 0
+                        }]
+                    })
+                    return
+                } else if (event.type === 'tool_end') {
+                    setSearchStatus(null)
+
+                    setActiveToolChain(prev => prev.map(t =>
+                        t.toolName === event.toolName && t.status === 'running'
+                            ? {
+                                ...t,
+                                status: 'success',
+                                resultSummary: typeof (event as any).result === 'string'
+                                    ? (event as any).result.slice(0, 200)
+                                    : JSON.stringify((event as any).result || '').slice(0, 200)
+                            }
+                            : t
+                    ))
+                    return
+                }
+
+                // Handle text tokens
                 if (!streamingRef.current) {
                     streamingRef.current = true
                     setIsStreaming(true)
                 }
                 setStreamingContent((prev) => {
-                    const newRawContent = prev + event.token
+                    const newRawContent = prev + (event.token || '')
 
                     // As content streams, we parse it to determine if we're currently thinking
                     if (supportsThinking || newRawContent.includes('<think>') || newRawContent.toUpperCase().includes('[THOUGHT]')) {
@@ -102,6 +158,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
                 setIsStreaming(false)
                 setIsThinking(false)
                 setStreamingContent('')
+                // Note: We purposefully do NOT clear activeToolChain here so it remains visible after completion until the next message
 
                 // Reload messages to get the saved assistant message
                 api.conversations.getMessages(conversationId!).then((msgs) => {
@@ -128,7 +185,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
 
         const cleanupToolRequest = api.chat.onToolPermissionRequest ? api.chat.onToolPermissionRequest((data) => {
             if (data.conversationId === conversationId) {
-                setPendingToolRequest({ requestId: data.requestId, toolName: data.toolName, args: data.args })
+                setPendingToolRequest(data)
             }
         }) : () => { }
 
@@ -179,7 +236,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
     }, [conversationId, supportsThinking])
 
     const sendMessage = useCallback(
-        (content: string, options: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean; quotedMessageId?: string; quotedMessageText?: string } = {}, retryId?: string) => {
+        (content: string, options: { systemPrompt?: string; images?: string[]; searchEnabled?: boolean; quotedMessageId?: string; quotedMessageText?: string; isAgentMode?: boolean } = {}, retryId?: string) => {
             if (!conversationId || (streamingRef.current && !retryId) || (!content.trim() && !options?.images?.length)) return
 
             const api = getLocalAI()
@@ -191,6 +248,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
             setIsThinking(false)
             setStreamingContent('')
             setSearchStatus(null)
+            setActiveToolChain([])
 
             const optimisticId = retryId || `temp-${Date.now()}`
             const optimisticMessage: ChatMessage = {
@@ -217,7 +275,18 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
                 return [...prev, optimisticMessage]
             })
 
-            api.chat.sendMessage(conversationId, content.trim(), options?.systemPrompt || DEFAULT_SYSTEM_PROMPT, options?.images, options?.searchEnabled, retryId, options?.quotedMessageId, options?.quotedMessageText)
+            api.chat.sendMessage(
+                conversationId,
+                content.trim(),
+                options?.systemPrompt || DEFAULT_SYSTEM_PROMPT,
+                options?.images,
+                options?.searchEnabled,
+                retryId,
+                options?.quotedMessageId,
+                options?.quotedMessageText,
+                options?.isAgentMode,
+                enabledToolCategories.map(c => c as string)
+            )
                 .then((result) => {
                     if (result.error) {
                         setError(result.error)
@@ -233,7 +302,7 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
                     setIsThinking(false)
                 })
         },
-        [conversationId]
+        [conversationId, enabledToolCategories]
     )
 
     const retryMessage = useCallback(
@@ -286,10 +355,10 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
 
     const clearError = useCallback(() => setError(null), [])
 
-    const approveTool = useCallback((requestId: string) => {
+    const approveTool = useCallback((requestId: string, always?: boolean) => {
         const api = getLocalAI()
         if (!api) return
-        api.chat.sendToolPermissionResponse(requestId, true)
+        api.chat.sendToolPermissionResponse(requestId, true, always)
         setPendingToolRequest(null)
     }, [])
 
@@ -299,6 +368,16 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
         api.chat.sendToolPermissionResponse(requestId, false)
         setPendingToolRequest(null)
     }, [])
+
+    const onCategoriesChange = useCallback((categories: ToolCategory[]) => {
+        setEnabledToolCategories(categories)
+        if (conversationId) {
+            const api = getLocalAI()
+            if (api) {
+                api.conversations.update(conversationId, { enabledToolCategories: categories })
+            }
+        }
+    }, [conversationId])
 
     return {
         messages: messages.filter(m => m.role !== 'assistant' || m.isActive !== false || m.isAborted), // For linear UI
@@ -316,6 +395,9 @@ export function useChat(conversationId: string | null, supportsThinking: boolean
         switchVersion,
         approveTool,
         denyTool,
-        pendingToolRequest
+        pendingToolRequest,
+        enabledToolCategories,
+        onCategoriesChange,
+        activeToolChain
     }
 }

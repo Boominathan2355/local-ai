@@ -23,8 +23,11 @@ import { ModelSwitcher } from './ModelSwitcher'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { ReasoningBlock } from './ReasoningBlock'
 import { parseThinkingProcess } from '../../utils/ai-parser'
+import { ToolPermissionCard } from '../mcp/ToolPermissionCard'
+import { ToolCallCard } from '../mcp/ToolCallCard'
 import type { ChatMessage } from '../../types/chat.types'
 import type { AppSettings } from '../../types/settings.types'
+import type { ToolCategory, ToolPermissionRequest } from '../../types/mcp.types'
 
 const HINT_PROMPTS = [
     'Explain how async/await works in JavaScript',
@@ -40,7 +43,7 @@ interface ChatWindowProps {
     isThinking?: boolean
     error: string | null
     modelReady: boolean
-    onSendMessage: (content: string, images?: string[], searchEnabled?: boolean, retryId?: string, quotedMessageId?: string, quotedMessageText?: string) => void
+    onSendMessage: (content: string, images?: string[], searchEnabled?: boolean, retryId?: string, quotedMessageId?: string, quotedMessageText?: string, isAgentMode?: boolean) => void
     onStopGeneration: () => void
     activeModelId: string | null
     modelStatus: string
@@ -55,9 +58,12 @@ interface ChatWindowProps {
     allMessages?: ChatMessage[]
     onSwitchVersion?: (id: string) => void
     supportsVision?: boolean
-    pendingToolRequest: { requestId: string; toolName: string; args: any } | null
-    onApproveTool: (requestId: string) => void
+    pendingToolRequest: ToolPermissionRequest | null
+    onApproveTool: (requestId: string, always?: boolean) => void
     onDenyTool: (requestId: string) => void
+    enabledToolCategories?: ToolCategory[]
+    onCategoriesChange?: (categories: ToolCategory[]) => void
+    activeToolChain?: any[]
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -84,7 +90,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     supportsVision = false,
     pendingToolRequest,
     onApproveTool,
-    onDenyTool
+    onDenyTool,
+    enabledToolCategories,
+    onCategoriesChange,
+    activeToolChain
 }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -197,7 +206,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     }
 
     const handleSendMessageWithQuote = (content: string, images?: string[], searchEnabled?: boolean, retryId?: string) => {
-        onSendMessage(content, images, searchEnabled, retryId, quotingMessageId ?? undefined, quotingMessageText ?? undefined)
+        onSendMessage(content, images, searchEnabled, retryId, quotingMessageId ?? undefined, quotingMessageText ?? undefined, isAgentMode)
         setQuotingMessageId(null)
         setQuotingMessageText(null)
     }
@@ -284,35 +293,20 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                         ))}
 
                         {/* Streaming assistant message */}
-                        {isStreaming && (streamingContent || isThinking) && (
-                            <div className="message message--assistant message--streaming" id="streaming-message">
-                                <div className="message__wrapper">
-                                    <div className="message__avatar message__avatar--assistant">
-                                        <Bot size={16} />
-                                    </div>
-                                    <div className="message__flat">
-                                        <div className="message__content message__content--markdown">
-                                            {(() => {
-                                                const parsed = parseThinkingProcess(streamingContent);
-                                                return (
-                                                    <>
-                                                        {(parsed.reasoningContent || parsed.isThinking || isThinking) && (
-                                                            <ReasoningBlock
-                                                                reasoningContent={parsed.reasoningContent || (isThinking ? streamingContent.replace(/<think>|<\/think>/g, '') : '')}
-                                                                isThinking={parsed.isThinking || isThinking}
-                                                            />
-                                                        )}
-                                                        {parsed.content && (
-                                                            <MarkdownRenderer content={parsed.content} />
-                                                        )}
-                                                    </>
-                                                );
-                                            })()}
-                                        </div>
-                                        <StreamingIndicator />
-                                    </div>
-                                </div>
-                            </div>
+                        {isStreaming && (streamingContent || isThinking || (activeToolChain && activeToolChain.length > 0)) && (
+                            <MessageBubble
+                                message={{
+                                    id: 'streaming',
+                                    role: 'assistant',
+                                    content: streamingContent,
+                                    createdAt: Date.now(),
+                                    conversationId: '',
+                                    tokenCount: 0,
+                                    isThinking: isThinking
+                                }}
+                                toolChain={activeToolChain}
+                                isStreaming={isStreaming}
+                            />
                         )}
 
                         {/* Streaming but no content yet */}
@@ -355,48 +349,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
 
                         {/* Tool Permission Request */}
-                        {pendingToolRequest && (() => {
-                            const riskLevel =
-                                ['read_file', 'list_directory'].includes(pendingToolRequest.toolName) ? 'safe' :
-                                    ['write_file'].includes(pendingToolRequest.toolName) ? 'caution' : 'danger';
-
-                            return (
-                                <div className={`tool-permission tool-permission--${riskLevel}`} id="tool-permission-bubble">
-                                    <div className="tool-permission__header">
-                                        <div className="tool-permission__icon">
-                                            <ShieldCheck size={18} />
-                                        </div>
-                                        <span className="tool-permission__title">Tool Permission Requested</span>
-                                    </div>
-                                    <div className="tool-permission__desc">
-                                        The agent wants to use the <strong>{pendingToolRequest.toolName}</strong> tool with the following arguments:
-                                    </div>
-                                    <pre className="tool-permission__content">
-                                        {pendingToolRequest.toolName === 'run_command' ? (
-                                            <code className="text-danger">$ {pendingToolRequest.args.command}</code>
-                                        ) : (
-                                            JSON.stringify(pendingToolRequest.args, null, 2)
-                                        )}
-                                    </pre>
-                                    <div className="tool-permission__actions">
-                                        <button
-                                            className="tool-permission__btn tool-permission__btn--deny"
-                                            onClick={() => onDenyTool(pendingToolRequest.requestId)}
-                                        >
-                                            <XCircle size={16} />
-                                            Deny
-                                        </button>
-                                        <button
-                                            className="tool-permission__btn tool-permission__btn--approve"
-                                            onClick={() => onApproveTool(pendingToolRequest.requestId)}
-                                        >
-                                            <Check size={16} />
-                                            Approve & Execute
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })()}
+                        {pendingToolRequest && (
+                            <ToolPermissionCard
+                                request={pendingToolRequest}
+                                onResponse={(requestId, approved, always) => {
+                                    if (approved) onApproveTool(requestId, always)
+                                    else onDenyTool(requestId)
+                                }}
+                            />
+                        )}
 
 
                         <div ref={messagesEndRef} />
@@ -425,6 +386,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                     setQuotingMessageId(null)
                     setQuotingMessageText(null)
                 }}
+                enabledToolCategories={enabledToolCategories}
+                onCategoriesChange={onCategoriesChange}
             />
 
             {floatingReply && (
