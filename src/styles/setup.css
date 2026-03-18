@@ -109,7 +109,7 @@
 
 .setup__card {
     width: 100%;
-    max-width: 960px;
+    max-width: 1200px;
     background: #fff;
     border-radius: 20px;
     padding: 32px;
@@ -394,7 +394,7 @@
 /* Model Cards Grid */
 .setup__models {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: var(--space-lg);
     width: 100%;
     margin-bottom: var(--space-xl);
@@ -424,7 +424,7 @@
 
 @media (max-width: 900px) {
     .setup__models {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
     }
 }
 
