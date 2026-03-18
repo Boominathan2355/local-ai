@@ -1125,6 +1125,26 @@ export function registerIpcHandlers(
         return { success: true }
     })
 
+    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_PAUSE, (_event, id: string) => {
+        downloadService.pauseDownload(id)
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_RESUME, (_event, id: string) => {
+        downloadService.resumeDownload(id)
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.SETUP_PAUSE, () => {
+        setupManager.pauseDownload('binary')
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.SETUP_RESUME, () => {
+        setupManager.resumeDownload('binary')
+        return { success: true }
+    })
+
 }
 
 /**

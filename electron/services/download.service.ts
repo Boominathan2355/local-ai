@@ -31,6 +31,7 @@ export interface DownloadProgress {
     percent: number
     speedMBps: number
     etaSeconds: number
+    status?: 'downloading' | 'paused' | 'error' | 'complete'
 }
 
 export interface DownloadedModelInfo {
@@ -1084,7 +1085,14 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
  * Emits progress events for UI updates.
  */
 export class DownloadService extends EventEmitter {
-    private activeDownloads = new Map<string, { abort: () => void }>()
+    private activeDownloads = new Map<string, { 
+        abort: () => void, 
+        pause: () => void,
+        resume: () => void,
+        url: string,
+        destPath: string,
+        status: 'downloading' | 'paused'
+    }>()
     private readonly modelsDir: string
     private readonly llamaDir: string
 
@@ -1226,6 +1234,29 @@ export class DownloadService extends EventEmitter {
     }
 
     /**
+     * Pauses an active download.
+     */
+    pauseDownload(downloadId: string): void {
+        const download = this.activeDownloads.get(downloadId)
+        if (download && download.status === 'downloading') {
+            download.pause()
+            download.status = 'paused'
+            this.emit('progress', { id: downloadId, status: 'paused' })
+        }
+    }
+
+    /**
+     * Resumes a paused download.
+     */
+    resumeDownload(downloadId: string): void {
+        const download = this.activeDownloads.get(downloadId)
+        if (download && download.status === 'paused') {
+            download.status = 'downloading'
+            download.resume()
+        }
+    }
+
+    /**
      * Cancels an active download.
      */
     cancelDownload(downloadId: string): void {
@@ -1240,10 +1271,12 @@ export class DownloadService extends EventEmitter {
     /**
      * Core download function with redirect following, progress tracking, and abort support.
      */
-    private downloadFile(url: string, destPath: string, downloadId: string): Promise<void> {
+    private downloadFile(url: string, destPath: string, downloadId: string, resume = false): Promise<void> {
         return new Promise((resolve, reject) => {
             const tempPath = `${destPath}.download`
             let aborted = false
+            let paused = false
+            let currentReq: http.ClientRequest | null = null
 
             const cleanup = (): void => {
                 try {
@@ -1253,6 +1286,7 @@ export class DownloadService extends EventEmitter {
 
             const abort = (): void => {
                 aborted = true
+                if (currentReq) currentReq.destroy()
                 console.log(`[DownloadService] Download cancelled: ${downloadId}`)
                 cleanup()
                 const error = new Error('Download cancelled')
@@ -1260,38 +1294,71 @@ export class DownloadService extends EventEmitter {
                 reject(error)
             }
 
-            this.activeDownloads.set(downloadId, { abort })
+            const pause = (): void => {
+                paused = true
+                if (currentReq) currentReq.destroy()
+                console.log(`[DownloadService] Download paused: ${downloadId}`)
+            }
 
-            const startDownload = (downloadUrl: string, redirectCount = 0): void => {
+            const resumeFn = (): void => {
+                paused = false
+                const downloaded = existsSync(tempPath) ? statSync(tempPath).size : 0
+                startDownload(url, 0, downloaded)
+            }
+
+            this.activeDownloads.set(downloadId, { 
+                abort, 
+                pause, 
+                resume: resumeFn, 
+                url, 
+                destPath, 
+                status: 'downloading' 
+            })
+
+            const startDownload = (downloadUrl: string, redirectCount = 0, offset = 0): void => {
                 if (redirectCount > 5) {
                     cleanup()
                     reject(new Error('Too many redirects'))
                     return
                 }
 
-                console.log(`[DownloadService] Starting download from: ${downloadUrl}`)
+                console.log(`[DownloadService] Starting download from: ${downloadUrl}${offset > 0 ? ` (offset: ${offset})` : ''}`)
 
                 const client = downloadUrl.startsWith('https') ? https : http
-                const req = client.get(downloadUrl, { timeout: 60000 }, (res) => {
+                const headers: Record<string, string> = { 'User-Agent': 'LocalAI-Desktop-App' }
+                if (offset > 0) {
+                    headers['Range'] = `bytes=${offset}-`
+                }
+
+                const req = client.get(downloadUrl, { headers, timeout: 300000 }, (res) => {
+                    currentReq = req
                     if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                         console.log(`[DownloadService] Redirecting to: ${res.headers.location}`)
-                        startDownload(res.headers.location, redirectCount + 1)
+                        startDownload(res.headers.location, redirectCount + 1, offset)
                         return
                     }
 
-                    if (res.statusCode !== 200) {
+                    if (res.statusCode !== 200 && res.statusCode !== 206) {
                         cleanup()
                         reject(new Error(`Download failed: HTTP ${res.statusCode}`))
                         return
                     }
 
-                    console.log(`[DownloadService] First chunk received for ${downloadId}`)
+                    // For 206 Partial Content, we need the total from Content-Range or Content-Length + offset
+                    let total = parseInt(res.headers['content-length'] ?? '0', 10)
+                    if (res.statusCode === 206 && res.headers['content-range']) {
+                        const match = res.headers['content-range'].match(/\/(\d+)$/)
+                        if (match) {
+                            total = parseInt(match[1], 10)
+                        }
+                    } else if (offset > 0) {
+                        total += offset
+                    }
 
-                    const total = parseInt(res.headers['content-length'] ?? '0', 10)
-                    let downloaded = 0
-                    const startTime = Date.now()
+                    let downloaded = offset
+                    const startTime = Date.now() - (offset > 0 ? 1000 : 0) // Tiny offset to avoid div by zero if speed calc happens instantly
 
-                    const file = createWriteStream(tempPath)
+                    const file = createWriteStream(tempPath, { flags: offset > 0 ? 'a' : 'w' })
 
                     res.on('data', (chunk: Buffer) => {
                         if (aborted) return
@@ -1311,7 +1378,8 @@ export class DownloadService extends EventEmitter {
                             total,
                             percent: total > 0 ? Math.round((downloaded / total) * 100) : 0,
                             speedMBps: Math.round(speedMBps * 100) / 100,
-                            etaSeconds: Math.round(remaining)
+                            etaSeconds: Math.round(remaining),
+                            status: 'downloading'
                         }
 
                         this.emit('progress', progress)
@@ -1325,8 +1393,8 @@ export class DownloadService extends EventEmitter {
                         
                         // Wait slightly to let OS close handle
                         setTimeout(async () => {
-                            if (aborted) {
-                                cleanup()
+                            if (aborted || paused) {
+                                if (aborted) cleanup()
                                 return
                             }
 

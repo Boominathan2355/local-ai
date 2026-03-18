@@ -1,13 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
-import {
-    Rocket,
-    Download,
-    Check,
-    Sparkles,
-    Cpu,
-    Shield,
-    ArrowRight,
-    BookOpen
+import { 
+    Rocket, Download, Cpu, Shield, Sparkles, Check, 
+    ChevronRight, Info, AlertTriangle, Monitor, 
+    HardDrive, Zap, Globe, Lock, Pause, Play, X,
+    ArrowRight, BookOpen
 } from 'lucide-react'
 
 import { getLocalAI } from '../../helpers/ipc.helper'
@@ -22,6 +18,8 @@ interface DownloadableModel {
     ramRequired: number
     filename: string
     downloaded: boolean
+    tier?: string // Added tier property
+    isSystemModel?: boolean // System models always shown, others hidden by default
 }
 
 interface DownloadProgress {
@@ -32,6 +30,7 @@ interface DownloadProgress {
     percent: number
     speedMBps: number
     etaSeconds: number
+    status?: 'downloading' | 'paused' | 'error' | 'complete'
 }
 
 interface SetupStatus {
@@ -72,6 +71,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
     const [isDownloading, setIsDownloading] = useState(false)
     const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
     const [error, setError] = useState<string | null>(null)
+    const [showAllModels, setShowAllModels] = useState(false)
 
     const cleanupRef = useRef<Array<() => void>>([])
 
@@ -112,17 +112,18 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                 }
             })
         })
-    }, [onComplete])
+    }, []) // Removed onComplete from dependencies
 
     // Subscribe to download events
     useEffect(() => {
         const api = getLocalAI()
         if (!api) return
 
-        const cleanupProgress = api.download.onProgress((p) => {
-            if (!isDownloading) {
-                console.log('[ModelSetup] Detected background model download, enabling progress UI')
+        const offProgress = api.download.onProgress((p) => {
+            if (p.id === 'binary' || p.id.startsWith('model:')) {
+                setProgress(p)
                 setIsDownloading(true)
+                console.log('[ModelSetup] Detected background model download, enabling progress UI')
                 // Ensure we are at the model step if a model is downloading
                 if (p.id?.startsWith('model:') && currentStep !== 'done') {
                     setCurrentStep('model')
@@ -167,6 +168,16 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             setIsDownloading(false)
             setProgress(null)
             setError(data.error)
+            
+            // Delete the model if download failed
+            if (data.id && data.id.startsWith('model:')) {
+                const modelId = data.id.replace('model:', '')
+                if (modelId && models.some(m => m.id === modelId)) {
+                    api.model.deleteModel(modelId).catch((err: unknown) => {
+                        console.error(`[ModelSetup] Failed to delete model ${modelId} after error:`, err)
+                    })
+                }
+            }
         })
 
         const cleanupSetupProgress = api.setup.onProgress((p) => {
@@ -202,17 +213,18 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             setIsDownloading(false)
             setProgress(null)
             setError(data.error)
+            // Engine download - no model to delete
         })
 
         cleanupRef.current = [
-            cleanupProgress, cleanupComplete, cleanupError,
+            offProgress, cleanupComplete, cleanupError,
             cleanupSetupProgress, cleanupSetupComplete, cleanupSetupError
         ]
 
         return () => {
             cleanupRef.current.forEach((fn) => fn())
         }
-    }, [onComplete])
+    }, [currentStep, isDownloading, selectedModelId]) // Added currentStep, isDownloading, selectedModelId to dependencies
 
     const handleDownloadBinary = (): void => {
         const api = getLocalAI()
@@ -239,6 +251,53 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
         } else if (currentStep === 'model') {
             handleDownloadModel()
         }
+    }
+
+    const handlePauseResume = (): void => {
+        if (!progress) return
+        const api = getLocalAI()
+        if (!api) return
+
+        if (progress.status === 'paused') {
+            if (progress.id === 'binary') {
+                api.setup.resumeDownload()
+            } else {
+                api.download.resume(progress.id)
+            }
+        } else {
+            if (progress.id === 'binary') {
+                api.setup.pauseDownload()
+            } else {
+                api.download.pause(progress.id)
+            }
+        }
+    }
+
+    const handleCancel = (): void => {
+        if (!progress) return
+        const api = getLocalAI()
+        if (!api) return
+
+        if (progress.id === 'binary') {
+            api.setup.cancelDownload(progress.id)
+        } else {
+            api.download.cancel(progress.id)
+            // Delete the model if download is cancelled
+            const modelId = progress.id.replace('model:', '')
+            if (modelId && models.some(m => m.id === modelId)) {
+                api.model.deleteModel(modelId).then(() => {
+                    console.log(`[ModelSetup] Model ${modelId} deleted successfully after cancel`)
+                    // Refresh models list to reflect deletion
+                    api.download.getModels({ includeCloud: false }).then((m) => {
+                        setModels(m as DownloadableModel[])
+                    })
+                }).catch((err: unknown) => {
+                    console.error(`[ModelSetup] Failed to delete model ${modelId} after cancel:`, err)
+                })
+            }
+        }
+        setIsDownloading(false)
+        setProgress(null)
     }
 
     return (
@@ -310,7 +369,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                     <div className="setup__card animate-fadeIn">
                         <div className="setup__inner-actions">
                             <p className="setup__step-desc">
-                                First, download the llama.cpp inference engine (~5 MB).
+                                First, download the llama.cpp inference engine (~35 MB).
                                 This is the runtime that powers your AI assistant.
                             </p>
                             <button
@@ -333,28 +392,59 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                 {currentStep === 'model' && (
                     <div className="setup__card animate-fadeIn">
                         <div className="setup__models" id="model-list">
-                            {models.map((model, index) => (
+                            {models.filter((model) => showAllModels || model.isSystemModel !== false).map((model) => {
+                                const isThisModelDownloading = isDownloading && (progress?.id === `model:${model.id}`)
+                                const isOtherModelDownloading = isDownloading && progress?.id && progress.id !== `model:${model.id}` && progress.id !== 'binary'
+                                
+                                if (isOtherModelDownloading) return null
+
+                                return (
                                 <button
                                     key={model.id}
-                                    className={`model-card ${selectedModelId === model.id ? 'model-card--selected' : ''} ${model.downloaded ? 'model-card--downloaded' : ''}`}
+                                    className={`model-card ${selectedModelId === model.id ? 'model-card--selected' : ''} ${isThisModelDownloading ? 'model-card--downloading' : ''} animate-fadeIn`}
                                     onClick={() => setSelectedModelId(model.id)}
-                                    id={`model-card-${model.id}`}
+                                    disabled={isDownloading && !isThisModelDownloading}
                                 >
-                                    <div className="model-card__name">{model.name}</div>
-                                    <div className="model-card__description">{model.description}</div>
+                                    <div className="model-card__header">
+                                        <div className="model-card__name">{model.name}</div>
+                                        <div className="model-card__tier">{model.tier}</div>
+                                    </div>
+                                    <p className="model-card__desc">{model.description}</p>
                                     
-                                    {/* Integrated Progress Bar for downloading models */}
-                                    {isDownloading && progress && (progress.id === `model:${model.id}` || progress.filename === model.filename) && (
-                                        <div className="model-card__progress">
+                                    {isThisModelDownloading && (
+                                        <div className="setup__progress setup__progress--mini">
+                                            <div className="progress-bar-header">
+                                                <span className="progress-bar-title">Downloading Model...</span>
+                                                <div className="progress-bar-actions">
+                                                    <button 
+                                                        className="progress-bar-action-btn" 
+                                                        onClick={(e) => { e.stopPropagation(); handlePauseResume(); }}
+                                                        title={progress.status === 'paused' ? 'Resume' : 'Pause'}
+                                                    >
+                                                        {progress.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
+                                                    </button>
+                                                    <button 
+                                                        className="progress-bar-action-btn progress-bar-action-btn--cancel" 
+                                                        onClick={(e) => { e.stopPropagation(); handleCancel(); }}
+                                                        title="Cancel"
+                                                    >
+                                                        <X size={14} />
+                                                    </button>
+                                                </div>
+                                            </div>
                                             <div className="progress-bar">
                                                 <div
-                                                    className="progress-bar__fill"
+                                                    className={`progress-bar__fill ${progress.status === 'paused' ? 'progress-bar__fill--paused' : ''}`}
                                                     style={{ width: `${progress.percent}%` }}
                                                 />
                                             </div>
                                             <div className="progress-bar__info">
                                                 <span>{Math.round(progress.percent)}% · {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
-                                                <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)} remaining</span>
+                                                {progress.status === 'paused' ? (
+                                                    <span className="progress-status-paused">Paused</span>
+                                                ) : (
+                                                    <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)} remaining</span>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -363,7 +453,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                         <span>{model.sizeGB} GB</span>
                                         {model.downloaded ? (
                                             <span className="model-card__badge model-card__badge--downloaded">Downloaded</span>
-                                        ) : isDownloading && (progress?.id === `model:${model.id}` || (model.filename && progress?.filename === model.filename)) ? (
+                                        ) : isThisModelDownloading ? (
                                             <span className="model-card__badge model-card__badge--downloading">Downloading</span>
                                         ) : selectedModelId === model.id ? (
                                             <span className="model-card__badge model-card__badge--recommended">
@@ -372,22 +462,61 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                         ) : null}
                                     </div>
                                 </button>
-                            ))}
+                                )
+                            })}
                         </div>
+
+                        {/* Toggle to show all models */}
+                        {models.some((m) => m.isSystemModel === false) && (
+                            <div style={{ textAlign: 'center', marginTop: 'var(--space-lg)', paddingTop: 'var(--space-lg)', borderTop: '1px solid var(--border-subtle)' }}>
+                                <button
+                                    className="setup__skip"
+                                    onClick={() => setShowAllModels(!showAllModels)}
+                                    style={{ cursor: 'pointer' }}
+                                >
+                                    {showAllModels ? 'Show System Models Only' : 'Show All Available Models'}
+                                </button>
+                            </div>
+                        )}
 
                         {/* Integrated Progress Bar (fallback for models) if ID match fails but filename works */}
                         {isDownloading && progress?.id?.startsWith('model:') && !models.some(m => progress.id === `model:${m.id}` || (m.filename && progress.filename === m.filename)) && (
                             <div className="setup__progress-container animate-slideUp" style={{ marginTop: 'var(--space-xl)' }}>
                                 <div className="setup__progress">
-                                    <p style={{ color: 'var(--text-primary)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-md)', textAlign: 'center' }}>
-                                        {progress.filename}
-                                    </p>
+                                    <div className="progress-bar-header">
+                                        <p style={{ color: 'var(--text-primary)', fontSize: 'var(--font-size-sm)', marginBottom: '0', textAlign: 'center' }}>
+                                            {progress.filename}
+                                        </p>
+                                        <div className="progress-bar-actions">
+                                            <button 
+                                                className="progress-bar-action-btn" 
+                                                onClick={handlePauseResume}
+                                                title={progress.status === 'paused' ? 'Resume' : 'Pause'}
+                                            >
+                                                {progress.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
+                                            </button>
+                                            <button 
+                                                className="progress-bar-action-btn progress-bar-action-btn--cancel" 
+                                                onClick={handleCancel}
+                                                title="Cancel"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
                                     <div className="progress-bar">
-                                        <div className="progress-bar__fill" style={{ width: `${progress.percent}%` }} />
+                                        <div 
+                                            className={`progress-bar__fill ${progress.status === 'paused' ? 'progress-bar__fill--paused' : ''}`} 
+                                            style={{ width: `${progress.percent}%` }} 
+                                        />
                                     </div>
                                     <div className="progress-bar__info" style={{ color: 'var(--text-secondary)' }}>
                                         <span>{Math.round(progress.percent)}% · {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
-                                        <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)} remaining</span>
+                                        {progress.status === 'paused' ? (
+                                            <span className="progress-status-paused">Paused</span>
+                                        ) : (
+                                            <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)} remaining</span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -453,7 +582,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                 </button>
                                 <button
                                     className="setup__secondary-btn"
-                                    onClick={() => window.open('https://github.com/boominathan2355/local-ai', '_blank')}
+                                    onClick={() => window.open('https://github.com/Boominathan2355/local-ai/tree/main/docs', '_blank')}
                                 >
                                     <BookOpen size={14} /> Documentation
                                 </button>

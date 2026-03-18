@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Zap, Bot, Eye, Library as LibraryIcon, CheckCircle2, AlertTriangle, XCircle, X, Download } from 'lucide-react'
+import { Zap, Bot, Eye, Library as LibraryIcon, CheckCircle2, AlertTriangle, XCircle, X, Download, Pause, Play } from 'lucide-react'
 import { getLocalAI } from '../../helpers/ipc.helper'
 import { getCompatibility, getBestFitModelId, getRecommendation } from '../../helpers/recommendation.helper'
 import type { SystemInfo, CompatibilityStatus, ModelInfo } from '../../helpers/recommendation.helper'
@@ -15,6 +15,7 @@ interface DownloadProgress {
     etaSeconds: number
     downloaded: number
     total: number
+    status?: 'downloading' | 'paused' | 'error' | 'complete'
 }
 
 interface ModelLibraryProps {
@@ -150,6 +151,19 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
         api.download.cancel(`model:${modelId}`)
     }
 
+    const handlePauseResume = (modelId: string): void => {
+        const api = getLocalAI()
+        if (!api) return
+        const progress = activeDownloads[`model:${modelId}`]
+        if (!progress) return
+
+        if (progress.status === 'paused') {
+            api.download.resume(`model:${modelId}`)
+        } else {
+            api.download.pause(`model:${modelId}`)
+        }
+    }
+
     const handleToggleCloudModel = (modelId: string): void => {
         const currentEnabled = settings.enabledCloudModels || []
         const isEnabled = currentEnabled.includes(modelId)
@@ -240,20 +254,34 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
                     <div className="library__progress">
                         <div className="library__progress-bar">
                             <div
-                                className="library__progress-fill"
+                                className={`library__progress-fill ${progress.status === 'paused' ? 'library__progress-fill--paused' : ''}`}
                                 style={{ width: `${progress.percent}%` }}
                             />
                         </div>
                         <div className="library__progress-info">
                             <span>{progress.percent}% · {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
-                            <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)}</span>
+                            {progress.status === 'paused' ? (
+                                <span className="progress-status-paused">Paused</span>
+                            ) : (
+                                <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)}</span>
+                            )}
                         </div>
-                        <button
-                            className="library__btn library__btn--cancel"
-                            onClick={() => handleCancel(model.id)}
-                        >
-                            Cancel
-                        </button>
+                        <div className="library__progress-actions" style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                            <button
+                                className="library__btn library__btn--pause"
+                                onClick={() => handlePauseResume(model.id)}
+                                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                            >
+                                {progress.status === 'paused' ? <><Play size={12} /> Resume</> : <><Pause size={12} /> Pause</>}
+                            </button>
+                            <button
+                                className="library__btn library__btn--cancel"
+                                onClick={() => handleCancel(model.id)}
+                                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                            >
+                                <X size={12} /> Cancel
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -347,7 +375,12 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
         }
     }
 
-    const filteredModels = getFilteredModels()
+    const filteredModels = getFilteredModels().filter(m => {
+        const isDownloadingAny = Object.keys(activeDownloads).length > 0
+        if (!isDownloadingAny) return true
+        const isThisDownloading = !!activeDownloads[`model:${m.id}`]
+        return isThisDownloading
+    })
 
     return (
         <div className="library-overlay" id="model-library">
