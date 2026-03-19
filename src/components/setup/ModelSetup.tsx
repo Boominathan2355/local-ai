@@ -49,17 +49,52 @@ interface ModelSetupProps {
 
 function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B'
+    if (bytes === undefined || bytes === null || isNaN(bytes)) return 'Unknown'
+    
     const gb = bytes / (1024 * 1024 * 1024)
     if (gb >= 1) return `${gb.toFixed(1)} GB`
     const mb = bytes / (1024 * 1024)
-    return `${mb.toFixed(0)} MB`
+    if (mb >= 1) return `${mb.toFixed(1)} MB`
+    return `${bytes} B`
 }
 
 function formatEta(seconds: number): string {
+    if (seconds === undefined || seconds === null || isNaN(seconds) || seconds <= 0) return 'Calculating...'
     if (seconds < 60) return `${seconds}s`
     const minutes = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${minutes}m ${secs}s`
+}
+
+function shortenModelName(filename: string): string {
+    // Remove common prefixes and extensions
+    const nameWithoutExt = filename.replace('.gguf', '').replace('.download', '')
+    
+    // Extract base name and version
+    const parts = nameWithoutExt.split('-')
+    const baseName = parts[0] || nameWithoutExt
+    
+    // Shorten common model names
+    const shortNames: { [key: string]: string } = {
+        'stable': 'sd',
+        'diffusion': 'sd',
+        'llama': 'llm',
+        'qwen': 'qwen',
+        'mistral': 'mistral',
+        'phi': 'phi',
+        'gemma': 'gemma'
+    }
+    
+    // Check if we have a short name mapping
+    for (const [key, shortName] of Object.entries(shortNames)) {
+        if (baseName.toLowerCase().includes(key)) {
+            return `${shortName}${parts.slice(1).join('-')}.gguf`
+        }
+    }
+    
+    // Fallback: truncate to 50 chars if no mapping found
+    const truncated = baseName.length > 50 ? baseName.substring(0, 47) + '...' : baseName
+    return `${truncated}.gguf`
 }
 
 export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
@@ -80,9 +115,9 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
         const api = getLocalAI()
         if (!api) return
 
+        // Clean up orphaned download files on component mount
         api.setup.getStatus().then((s) => {
             console.log('[ModelSetup] Initial status search:', s)
-            setStatus(s)
             
             // Initial step determination
             if (s.hasBinary && s.hasModel) {
@@ -92,6 +127,29 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             } else {
                 setCurrentStep('binary')
             }
+        })
+
+        // Clean up orphaned download files
+        api.download.getModels({ includeCloud: false }).then((models) => {
+            models.forEach((model) => {
+                if (model.filename && model.filename.endsWith('.download')) {
+                    console.log(`[ModelSetup] Found orphaned download file: ${model.filename}`)
+                    // Check if there's a corresponding complete model file
+                    const modelBaseName = model.filename.replace('.download', '')
+                    const hasCompleteFile = models.some((m) => 
+                        m.filename === modelBaseName || m.filename === `${modelBaseName}.gguf`
+                    )
+                    
+                    if (!hasCompleteFile) {
+                        console.log(`[ModelSetup] Deleting orphaned download file: ${model.filename}`)
+                        api.model.deleteModel(model.id).then(() => {
+                            console.log(`[ModelSetup] Orphaned file ${model.filename} deleted successfully`)
+                        }).catch((err: unknown) => {
+                            console.error(`[ModelSetup] Failed to delete orphaned file ${model.filename}:`, err)
+                        })
+                    }
+                }
+            })
         })
 
         api.download.getModels({ includeCloud: false }).then((m) => {
@@ -237,9 +295,28 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
 
     const handleDownloadModel = (): void => {
         if (!selectedModelId) return
+        
+        // Check if model is already being downloaded
+        const isModelCurrentlyDownloading = isDownloading && progress?.id === `model:${selectedModelId}`
+        const isModelAlreadyDownloaded = models.some(m => m.id === selectedModelId && m.downloaded)
+        
+        if (isModelCurrentlyDownloading) {
+            console.log(`[ModelSetup] Model ${selectedModelId} is already downloading, ignoring request`)
+            return // Don't start multiple downloads of same model
+        }
+        
+        if (isModelAlreadyDownloaded) {
+            console.log(`[ModelSetup] Model ${selectedModelId} is already downloaded, moving to completion`)
+            // If model is already downloaded, skip download and go to completion
+            if (status.hasBinary) {
+                setCurrentStep('done')
+            }
+            return
+        }
+        
         const api = getLocalAI()
         if (!api) return
-
+        
         setError(null)
         setIsDownloading(true)
         api.download.startModel(selectedModelId)
@@ -380,8 +457,8 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                 <Download size={16} /> Download Inference Engine
                             </button>
                             {status.llamaDir && (
-                                <p className="setup__path-info" style={{ marginTop: 'var(--space-md)', fontSize: '0.8rem', opacity: 0.7, color: 'var(--text-secondary)', textAlign: 'center' }}>
-                                    Installing to: <code style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 4px', borderRadius: '4px' }}>{status.llamaDir}</code>
+                                <p className="setup__path-info">
+                                    Installing to: <code>{status.llamaDir}</code>
                                 </p>
                             )}
                         </div>
@@ -419,14 +496,14 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                                     <button 
                                                         className="progress-bar-action-btn" 
                                                         onClick={(e) => { e.stopPropagation(); handlePauseResume(); }}
-                                                        title={progress.status === 'paused' ? 'Resume' : 'Pause'}
+                                                        title={progress.status === 'paused' ? 'Resume download' : 'Pause download'}
                                                     >
                                                         {progress.status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
                                                     </button>
                                                     <button 
                                                         className="progress-bar-action-btn progress-bar-action-btn--cancel" 
                                                         onClick={(e) => { e.stopPropagation(); handleCancel(); }}
-                                                        title="Cancel"
+                                                        title="Cancel download"
                                                     >
                                                         <X size={14} />
                                                     </button>
@@ -435,11 +512,15 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                             <div className="progress-bar">
                                                 <div
                                                     className={`progress-bar__fill ${progress.status === 'paused' ? 'progress-bar__fill--paused' : ''}`}
-                                                    style={{ width: `${progress.percent}%` }}
+                                                    style={{ width: `${isNaN(progress.percent) || progress.percent === undefined ? 0 : Math.min(100, Math.max(0, progress.percent))}%` }}
                                                 />
                                             </div>
                                             <div className="progress-bar__info">
-                                                <span>{Math.round(progress.percent)}% · {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
+                                                <span>
+                                                    {isNaN(progress.percent) || progress.percent === undefined ? '0' : Math.round(progress.percent)}% completed • 
+                                                    {isNaN(progress.downloaded) || progress.downloaded === undefined ? '0 MB' : formatBytes(progress.downloaded)} downloaded
+                                                    {progress.total && !isNaN(progress.total) && progress.total !== undefined ? ` / ${formatBytes(progress.total)}` : ''}
+                                                </span>
                                                 {progress.status === 'paused' ? (
                                                     <span className="progress-status-paused">Paused</span>
                                                 ) : (
@@ -450,11 +531,12 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                     )}
 
                                     <div className="model-card__meta">
-                                        <span>{model.sizeGB} GB</span>
+                                        <span>{model.id === 'tiny-sd-gguf' ? '0.4' : model.sizeGB} GB</span>
+                        
                                         {model.downloaded ? (
                                             <span className="model-card__badge model-card__badge--downloaded">Downloaded</span>
                                         ) : isThisModelDownloading ? (
-                                            <span className="model-card__badge model-card__badge--downloading">Downloading</span>
+                                            <span className="model-card__badge model-card__badge--downloading">Downloading...</span>
                                         ) : selectedModelId === model.id ? (
                                             <span className="model-card__badge model-card__badge--recommended">
                                                 {systemInfo ? getRecommendation(models, systemInfo)?.reason : 'Recommended'}
@@ -507,11 +589,15 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                     <div className="progress-bar">
                                         <div 
                                             className={`progress-bar__fill ${progress.status === 'paused' ? 'progress-bar__fill--paused' : ''}`} 
-                                            style={{ width: `${progress.percent}%` }} 
+                                            style={{ width: `${isNaN(progress.percent) || progress.percent === undefined ? 0 : Math.min(100, Math.max(0, progress.percent))}%` }} 
                                         />
                                     </div>
                                     <div className="progress-bar__info" style={{ color: 'var(--text-secondary)' }}>
-                                        <span>{Math.round(progress.percent)}% · {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
+                                        <span>
+                                            {isNaN(progress.percent) || progress.percent === undefined ? '0' : Math.round(progress.percent)}% · 
+                                            {isNaN(progress.downloaded) || progress.downloaded === undefined ? '0 MB' : formatBytes(progress.downloaded)} / 
+                                            {isNaN(progress.total) || progress.total === undefined ? 'Unknown' : formatBytes(progress.total)}
+                                        </span>
                                         {progress.status === 'paused' ? (
                                             <span className="progress-status-paused">Paused</span>
                                         ) : (
@@ -617,11 +703,15 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                     <div className="progress-bar">
                                         <div
                                             className="progress-bar__fill"
-                                            style={{ width: `${progress.percent}%` }}
+                                            style={{ width: `${isNaN(progress.percent) || progress.percent === undefined ? 0 : Math.min(100, Math.max(0, progress.percent))}%` }}
                                         />
                                     </div>
                                     <div className="progress-bar__info" style={{ color: 'var(--text-secondary)', fontWeight: '500' }}>
-                                        <span>{Math.round(progress.percent)}% · {formatBytes(progress.downloaded)} / {formatBytes(progress.total)}</span>
+                                        <span>
+                                            {isNaN(progress.percent) || progress.percent === undefined ? '0' : Math.round(progress.percent)}% · 
+                                            {isNaN(progress.downloaded) || progress.downloaded === undefined ? '0 MB' : formatBytes(progress.downloaded)} / 
+                                            {isNaN(progress.total) || progress.total === undefined ? 'Unknown' : formatBytes(progress.total)}
+                                        </span>
                                         <span>{progress.speedMBps} MB/s · {formatEta(progress.etaSeconds)} remaining</span>
                                     </div>
                                 </div>
