@@ -1059,7 +1059,7 @@ export function registerIpcHandlers(
     // --- Setup & Download ---
     ipcMain.handle(IPC_CHANNELS.SETUP_GET_STATUS, () => setupManager.getStatus())
 
-    ipcMain.handle(IPC_CHANNELS.SETUP_CHECK_UPDATES, () => setupManager.checkForUpdates())
+    ipcMain.handle(IPC_CHANNELS.SETUP_CHECK_UPDATES, () => setupManager.checkForUpdate())
 
     ipcMain.handle(IPC_CHANNELS.SETUP_INSTALL_ENGINE, async (event) => {
         const win = BrowserWindow.fromWebContents(event.sender)
@@ -1095,15 +1095,20 @@ export function registerIpcHandlers(
     ipcMain.handle(IPC_CHANNELS.DOWNLOAD_START_MODEL, async (event, modelId: string) => {
         const win = BrowserWindow.fromWebContents(event.sender)
         const prog = (p: any) => win?.webContents.send(IPC_CHANNELS.DOWNLOAD_PROGRESS, p)
+        const err = (e: any) => win?.webContents.send(IPC_CHANNELS.DOWNLOAD_ERROR, e)
+        
         downloadService.on('progress', prog)
+        downloadService.on('error', err)
+        
         try {
             const p = await downloadService.downloadModel(modelId)
             win?.webContents.send(IPC_CHANNELS.DOWNLOAD_COMPLETE, { id: `model:${modelId}`, path: p })
             return { success: true, path: p }
-        } catch (err) {
-            return { error: err instanceof Error ? err.message : 'Error' }
+        } catch (error) {
+            return { error: error instanceof Error ? error.message : 'Error' }
         } finally {
             downloadService.removeListener('progress', prog)
+            downloadService.removeListener('error', err)
         }
     })
     ipcMain.handle(IPC_CHANNELS.DOWNLOAD_CANCEL, (_event, id: string) => {
@@ -1117,6 +1122,26 @@ export function registerIpcHandlers(
             setupManager.cancelDownload(id)
             downloadService.cancelDownload(id)
         }
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_PAUSE, (_event, id: string) => {
+        downloadService.pauseDownload(id)
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.DOWNLOAD_RESUME, (_event, id: string) => {
+        downloadService.resumeDownload(id)
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.SETUP_PAUSE, () => {
+        setupManager.pauseDownload('binary')
+        return { success: true }
+    })
+
+    ipcMain.handle(IPC_CHANNELS.SETUP_RESUME, () => {
+        setupManager.resumeDownload('binary')
         return { success: true }
     })
 

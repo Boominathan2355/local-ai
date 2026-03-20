@@ -1,3 +1,5 @@
+import { MODEL_CONFIG } from '../constants/app.constants'
+
 export interface AppSettings {
     systemPrompt: string
     threads: number
@@ -7,6 +9,8 @@ export interface AppSettings {
     maxTokens: number
     theme: 'dark' | 'light'
     userName: string
+    defaultModelId?: string
+    fallbackModelId?: string
     serperApiKey?: string
     tavilyApiKey?: string
     openaiApiKey?: string
@@ -33,6 +37,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     maxTokens: 1024,
     theme: 'dark',
     userName: 'Local AI User',
+    defaultModelId: MODEL_CONFIG.DEFAULT_MODEL_ID,
+    fallbackModelId: MODEL_CONFIG.FALLBACK_MODEL_ID,
     serperApiKey: '',
     tavilyApiKey: '',
     openaiApiKey: '',

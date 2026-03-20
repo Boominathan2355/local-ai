@@ -74,7 +74,8 @@ export interface LocalAIApi {
         getModels: (options?: { includeCloud?: boolean }) => Promise<Array<{ id: string; name: string; description: string; sizeGB: number; ramRequired: number; tier: string; filename: string; downloaded: boolean }>>
         getDownloaded: () => Promise<Array<{ id: string; name: string; filename: string; sizeBytes: number; path: string }>>
         startModel: (modelId: string) => Promise<{ success?: boolean; error?: string; path?: string }>
-
+        pause: (downloadId: string) => Promise<{ success: boolean }>
+        resume: (downloadId: string) => Promise<{ success: boolean }>
         cancel: (downloadId: string) => Promise<{ success: boolean }>
         onProgress: (callback: (progress: { id: string; filename: string; downloaded: number; total: number; percent: number; speedMBps: number; etaSeconds: number }) => void) => () => void
         onComplete: (callback: (data: { id: string; path: string }) => void) => () => void
@@ -85,6 +86,9 @@ export interface LocalAIApi {
         checkUpdates: () => Promise<{ updateAvailable: boolean; latestVersion?: string; downloadUrl?: string }>
         installEngine: () => Promise<{ success?: boolean; error?: string; path?: string }>
         updateEngine: () => Promise<{ success?: boolean; error?: string; path?: string }>
+        pauseDownload: () => Promise<{ success: boolean }>
+        resumeDownload: () => Promise<{ success: boolean }>
+        cancelDownload: (downloadId: string) => Promise<{ success: boolean }>
         onProgress: (callback: (progress: { id: string; filename: string; downloaded: number; total: number; percent: number; speedMBps: number; etaSeconds: number }) => void) => () => void
         onComplete: (callback: (data: { id: string; path: string }) => void) => () => void
         onError: (callback: (data: { id: string; error: string }) => void) => () => void
@@ -170,7 +174,8 @@ const api: LocalAIApi = {
         getModels: (options) => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_GET_MODELS, options),
         getDownloaded: () => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_GET_DOWNLOADED),
         startModel: (modelId) => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_START_MODEL, modelId),
-
+        pause: (downloadId) => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_PAUSE, downloadId),
+        resume: (downloadId) => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_RESUME, downloadId),
         cancel: (downloadId) => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_CANCEL, downloadId),
         onProgress: (callback) => createListener(IPC_CHANNELS.DOWNLOAD_PROGRESS, callback),
         onComplete: (callback) => createListener(IPC_CHANNELS.DOWNLOAD_COMPLETE, callback),
@@ -181,6 +186,9 @@ const api: LocalAIApi = {
         checkUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_CHECK_UPDATES),
         installEngine: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_INSTALL_ENGINE),
         updateEngine: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_UPDATE_ENGINE),
+        pauseDownload: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_PAUSE),
+        resumeDownload: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_RESUME),
+        cancelDownload: (downloadId) => ipcRenderer.invoke(IPC_CHANNELS.DOWNLOAD_CANCEL, downloadId),
         onProgress: (callback) => createListener(IPC_CHANNELS.SETUP_PROGRESS, callback),
         onComplete: (callback) => createListener(IPC_CHANNELS.SETUP_COMPLETE, callback),
         onError: (callback) => createListener(IPC_CHANNELS.SETUP_ERROR, callback)

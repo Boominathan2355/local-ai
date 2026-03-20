@@ -16,7 +16,11 @@ linux:
   maintainer: localai
   category: Utility
   icon: build/icon.png
+deb:
+  artifactName: "${productName}.${ext}"
+  afterInstall: build/postinst
 win:
+  artifactName: "${productName}.${ext}"
   target:
     - nsis
   icon: build/icon.ico
