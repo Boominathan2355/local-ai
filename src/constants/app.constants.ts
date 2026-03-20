@@ -30,3 +30,8 @@ export const STORAGE_KEYS = {
     CONVERSATIONS: 'conversations',
     SETTINGS: 'settings'
 } as const
+
+export const MODEL_CONFIG = {
+    DEFAULT_MODEL_ID: 'qwen3.5-0.8b',
+    FALLBACK_MODEL_ID: 'qwen3.5-0.8b'
+} as const

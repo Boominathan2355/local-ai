@@ -20,6 +20,10 @@ interface DownloadableModel {
     downloaded: boolean
     tier?: string // Added tier property
     isSystemModel?: boolean // System models always shown, others hidden by default
+    supportsVision?: boolean // Vision capability support
+    supportsThinking?: boolean // Thinking capability support
+    supportsAgent?: boolean // Agent capability support
+    url?: string // Model download URL
 }
 
 interface DownloadProgress {
@@ -107,6 +111,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
     const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [showAllModels, setShowAllModels] = useState(false)
+    const [isBackendProcessing, setIsBackendProcessing] = useState(false)
 
     const cleanupRef = useRef<Array<() => void>>([])
 
@@ -154,21 +159,18 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
 
         api.download.getModels({ includeCloud: false }).then((m) => {
             setModels(m as DownloadableModel[])
-            // Pre-select the best fit model for the hardware
-            api.system.getInfo().then(sys => {
-                setSystemInfo(sys)
-                const rec = getRecommendation(m as any[], sys)
-                if (rec) {
-                    setSelectedModelId(rec.id)
-                } else {
-                    const downloaded = m.find((model) => model.downloaded)
-                    if (downloaded) {
-                        setSelectedModelId(downloaded.id)
-                    } else {
-                        setSelectedModelId(m[0]?.id ?? null)
-                    }
-                }
-            })
+            // Get only Qwen 3.5 0.8B model
+            const availableModels = (m as DownloadableModel[]).filter(model => 
+                model.id === 'qwen3.5-0.8b'
+            )
+            
+            if (availableModels.length > 0) {
+                // Select Qwen 3.5 0.8B as the only option
+                const selectedModel = availableModels.find(m => m.id === 'qwen3.5-0.8b') || availableModels[0]
+                
+                setSelectedModelId(selectedModel.id)
+                console.log(`[ModelSetup] Using recommended model: ${selectedModel.name} (${selectedModel.id})`)
+            }
         })
     }, []) // Removed onComplete from dependencies
 
@@ -181,6 +183,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             if (p.id === 'binary' || p.id.startsWith('model:')) {
                 setProgress(p)
                 setIsDownloading(true)
+                setIsBackendProcessing(false) // Hide backend loader when progress starts
                 console.log('[ModelSetup] Detected background model download, enabling progress UI')
                 // Ensure we are at the model step if a model is downloading
                 if (p.id?.startsWith('model:') && currentStep !== 'done') {
@@ -193,6 +196,13 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                 if (modelId && selectedModelId !== modelId) {
                     console.log(`[ModelSetup] Syncing selectedModelId to ${modelId} from progress event`)
                     setSelectedModelId(modelId)
+                    // Auto-scroll to the downloading model card
+                    setTimeout(() => {
+                        const modelCard = document.querySelector(`[data-model-id="${modelId}"]`)
+                        if (modelCard) {
+                            modelCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                        }
+                    }, 100)
                 }
             }
             setProgress(p)
@@ -212,10 +222,14 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             api.setup.getStatus().then((s) => {
                 console.log('[ModelSetup] Status refreshed after model download:', s)
                 setStatus(s)
+                
+                // Proper step progression logic
                 if (s.hasBinary && s.hasModel) {
                     setCurrentStep('done')
                 } else if (s.hasBinary) {
                     setCurrentStep('model')
+                } else {
+                    setCurrentStep('binary')
                 }
             }).catch(err => {
                 console.error('[ModelSetup] Failed to refresh status after model download:', err)
@@ -294,11 +308,22 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
     }
 
     const handleDownloadModel = (): void => {
-        if (!selectedModelId) return
+        console.log(`[ModelSetup] handleDownloadModel called, selectedModelId: ${selectedModelId}`)
+        if (!selectedModelId) {
+            console.log('[ModelSetup] No selectedModelId, returning')
+            return
+        }
+        
+        // Specific debugging for SmolVLM models
+        if (selectedModelId.includes('smolvlm')) {
+            console.log(`[ModelSetup] SmolVLM model selected: ${selectedModelId}`)
+        }
         
         // Check if model is already being downloaded
-        const isModelCurrentlyDownloading = isDownloading && progress?.id === `model:${selectedModelId}`
+        const isModelCurrentlyDownloading = isDownloading && (progress?.id === `model:${selectedModelId}`)
         const isModelAlreadyDownloaded = models.some(m => m.id === selectedModelId && m.downloaded)
+        
+        console.log(`[ModelSetup] isModelCurrentlyDownloading: ${isModelCurrentlyDownloading}, isModelAlreadyDownloaded: ${isModelAlreadyDownloaded}`)
         
         if (isModelCurrentlyDownloading) {
             console.log(`[ModelSetup] Model ${selectedModelId} is already downloading, ignoring request`)
@@ -315,13 +340,29 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
         }
         
         const api = getLocalAI()
-        if (!api) return
+        console.log(`[ModelSetup] getLocalAI() result:`, api)
+        if (!api) {
+            console.log('[ModelSetup] No API available, returning')
+            return
+        }
         
+        console.log(`[ModelSetup] Starting download for model: ${selectedModelId}`)
+        console.log(`[ModelSetup] Model URL: ${models.find(m => m.id === selectedModelId)?.url}`)
         setError(null)
         setIsDownloading(true)
-        api.download.startModel(selectedModelId)
+        setIsBackendProcessing(true)
+        
+        try {
+            console.log(`[ModelSetup] Calling api.download.startModel(${selectedModelId})`)
+            api.download.startModel(selectedModelId)
+            console.log(`[ModelSetup] api.download.startModel() called successfully`)
+        } catch (error) {
+            console.error(`[ModelSetup] Error calling api.download.startModel():`, error)
+            setError(`Failed to start download: ${error}`)
+            setIsDownloading(false)
+            setIsBackendProcessing(false)
+        }
     }
-
     const handleAction = (): void => {
         if (currentStep === 'binary') {
             handleDownloadBinary()
@@ -469,7 +510,9 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                 {currentStep === 'model' && (
                     <div className="setup__card animate-fadeIn">
                         <div className="setup__models" id="model-list">
-                            {models.filter((model) => showAllModels || model.isSystemModel !== false).map((model) => {
+                            {models.filter((model) => 
+                                model.id === 'qwen3.5-0.8b'
+                            ).map((model) => {
                                 const isThisModelDownloading = isDownloading && (progress?.id === `model:${model.id}`)
                                 const isOtherModelDownloading = isDownloading && progress?.id && progress.id !== `model:${model.id}` && progress.id !== 'binary'
                                 
@@ -478,8 +521,12 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                 return (
                                 <button
                                     key={model.id}
+                                    data-model-id={model.id}
                                     className={`model-card ${selectedModelId === model.id ? 'model-card--selected' : ''} ${isThisModelDownloading ? 'model-card--downloading' : ''} animate-fadeIn`}
-                                    onClick={() => setSelectedModelId(model.id)}
+                                    onClick={() => {
+                                        console.log(`[ModelSetup] Model card clicked: ${model.id}`)
+                                        setSelectedModelId(model.id)
+                                    }}
                                     disabled={isDownloading && !isThisModelDownloading}
                                 >
                                     <div className="model-card__header">
@@ -487,6 +534,30 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                         <div className="model-card__tier">{model.tier}</div>
                                     </div>
                                     <p className="model-card__desc">{model.description}</p>
+                                    
+                                    {/* Capability Labels */}
+                                    <div className="model-card__capabilities">
+                                        {model.supportsVision && (
+                                            <span className="model-card__capability model-card__capability--vision">
+                                                👁️ Vision
+                                            </span>
+                                        )}
+                                        {model.supportsThinking && (
+                                            <span className="model-card__capability model-card__capability--thinking">
+                                                🧠 Thinking
+                                            </span>
+                                        )}
+                                        {model.supportsAgent && (
+                                            <span className="model-card__capability model-card__capability--agent">
+                                                🤖 Agent
+                                            </span>
+                                        )}
+                                        {!model.supportsVision && !model.supportsThinking && !model.supportsAgent && (
+                                            <span className="model-card__capability model-card__capability--text">
+                                                💬 Text Only
+                                            </span>
+                                        )}
+                                    </div>
                                     
                                     {isThisModelDownloading && (
                                         <div className="setup__progress setup__progress--mini">
@@ -538,8 +609,9 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                         ) : isThisModelDownloading ? (
                                             <span className="model-card__badge model-card__badge--downloading">Downloading...</span>
                                         ) : selectedModelId === model.id ? (
-                                            <span className="model-card__badge model-card__badge--recommended">
-                                                {systemInfo ? getRecommendation(models, systemInfo)?.reason : 'Recommended'}
+                                            <span className={`model-card__badge ${model.id === 'smolvlm-500m-instruct' ? 'model-card__badge--best-choice' : 'model-card__badge--recommended'}`}>
+                                                {model.id === 'smolvlm-500m-instruct' ? 'BEST CHOICE' : 
+                                                 systemInfo ? getRecommendation(models, systemInfo)?.reason : 'Recommended'}
                                             </span>
                                         ) : null}
                                     </div>
@@ -622,12 +694,43 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                     <button
                                         className="setup__download-btn"
                                         onClick={handleAction}
-                                        disabled={!selectedModelId}
+                                        disabled={!selectedModelId || isBackendProcessing}
                                         id="download-model-btn"
                                     >
-                                        <Download size={16} /> Download {models.find((m) => m.id === selectedModelId)?.name ?? 'Model'}
+                                        {isBackendProcessing ? (
+                                            <>
+                                                <div className="spinner" style={{ 
+                                                    width: '16px', 
+                                                    height: '16px', 
+                                                    border: '2px solid rgba(255,255,255,0.3)', 
+                                                    borderTop: '2px solid white', 
+                                                    borderRadius: '50%', 
+                                                    animation: 'spin 1s linear infinite',
+                                                    marginRight: '8px'
+                                                }}></div>
+                                                Processing...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Download size={16} /> Download {models.find((m) => m.id === selectedModelId)?.name ?? 'Model'}
+                                            </>
+                                        )}
                                     </button>
                                 )}
+                                
+                                {/* Debug reset button - always show for testing */}
+                                <button
+                                    className="setup__skip"
+                                    onClick={() => {
+                                        console.log('[ModelSetup] Manual reset - isDownloading was:', isDownloading)
+                                        setIsDownloading(false)
+                                        setProgress(null)
+                                        setIsBackendProcessing(false)
+                                    }}
+                                    style={{ marginTop: '10px' }}
+                                >
+                                    Reset Download State (Debug)
+                                </button>
                             </div>
                         )}
                     </div>

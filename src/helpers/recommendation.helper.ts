@@ -118,6 +118,15 @@ export function getRecommendation(models: any[], systemInfo: SystemInfo | null):
         else if (model.tier === 'medium') score += 10
         else if (model.tier === 'light') score += 5
 
+        // 6. Vision Capability Bonus (Major feature advantage)
+        if (model.supportsVision) score += 25
+
+        // 7. Thinking Capability Bonus
+        if (model.supportsThinking) score += 15
+
+        // 8. Ultra-lightweight Bonus (models under 200MB)
+        if (model.sizeGB <= 0.2) score += 20
+
         return { id: model.id, score }
     })
 
@@ -130,10 +139,20 @@ export function getRecommendation(models: any[], systemInfo: SystemInfo | null):
     const model = localModels.find(m => m.id === best.id)
     let reason = 'Balanced for your system'
 
-    if (gpuVramGB >= model.sizeGB + 1.0) reason = 'Optimized: Fits entirely in VRAM'
-    else if (gpuVramGB > 0) reason = 'Hardware accelerated (GPU)'
-    else if (cpuCores >= 8 && model.ramRequired >= 10) reason = 'Great for high-core CPU'
-    else if (model.ramRequired <= 4) reason = 'Lightweight and fast'
+    if (model.supportsVision) {
+        if (model.sizeGB <= 0.2) reason = 'World\'s smallest vision model - ultimate efficiency!'
+        else if (model.sizeGB <= 0.5) reason = 'Ultra-compact vision model - perfect for edge devices'
+        else reason = 'Vision capable - analyze images locally'
+    } else if (gpuVramGB >= model.sizeGB + 1.0) {
+        reason = 'Optimized: Fits entirely in VRAM'
+    } else if (gpuVramGB > 0) {
+        reason = 'Hardware accelerated (GPU)'
+    } else if (cpuCores >= 8 && model.ramRequired >= 10) {
+        reason = 'Great for high-core CPU'
+    } else if (model.ramRequired <= 4) {
+        if (model.sizeGB <= 0.2) reason = 'Ultra-lightweight - incredibly fast and efficient'
+        else reason = 'Lightweight and fast'
+    }
 
     return { id: best.id, reason }
 }

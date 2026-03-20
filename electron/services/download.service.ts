@@ -21,6 +21,7 @@ export interface DownloadableModel {
     /** Filename to save the mmproj vision adapter file as */
     mmprojFilename?: string
     supportsThinking?: boolean
+    supportsAgent?: boolean
 }
 
 export interface DownloadProgress {
@@ -129,7 +130,41 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         url: 'https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf',
         filename: 'SmolLM2-135M-Instruct-Q4_K_M.gguf',
         tier: 'ultra-light',
-        provider: 'local'
+        provider: 'local',
+        supportsVision: false,
+        supportsThinking: false
+    },
+    {
+        id: 'smolvlm-256m-instruct',
+        name: 'SmolVLM 256M Instruct',
+        description: 'Best choice for under 500MB vision! Only 175MB with full vision capabilities. World\'s smallest Vision Language Model.',
+        sizeGB: 0.2,
+        ramRequired: 2,
+        url: 'https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/SmolVLM-256M-Instruct-Q4_K_M.gguf',
+        filename: 'SmolVLM-256M-Instruct-Q4_K_M.gguf',
+        mmprojUrl: 'https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/SmolVLM-256M-Instruct-mmproj-Q4_K.gguf',
+        mmprojFilename: 'SmolVLM-256M-Instruct-mmproj-Q4_K.gguf',
+        tier: 'ultra-light',
+        provider: 'local',
+        supportsVision: true,
+        supportsThinking: false,
+        supportsAgent: true
+    },
+    {
+        id: 'smolvlm-500m-instruct',
+        name: 'SmolVLM 500M Instruct',
+        description: 'Better performance, still under 500MB, more production-ready. Half-billion parameters deliver excellent multimodal performance.',
+        sizeGB: 0.4,
+        ramRequired: 4,
+        url: 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/SmolVLM-500M-Instruct-Q4_K_M.gguf',
+        filename: 'SmolVLM-500M-Instruct-Q4_K_M.gguf',
+        mmprojUrl: 'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/SmolVLM-500M-Instruct-mmproj-Q4_K.gguf',
+        mmprojFilename: 'SmolVLM-500M-Instruct-mmproj-Q4_K.gguf',
+        tier: 'ultra-light',
+        provider: 'local',
+        supportsVision: true,
+        supportsThinking: false,
+        supportsAgent: true
     },
     {
         id: 'smollm2-360m-instruct',
@@ -140,7 +175,22 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         url: 'https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_0.gguf',
         filename: 'SmolLM2-360M-Instruct-Q4_0.gguf',
         tier: 'ultra-light',
-        provider: 'local'
+        provider: 'local',
+        supportsVision: false,
+        supportsThinking: false
+    },
+    {
+        id: 'danube3-500m-instruct',
+        name: 'Danube3 500M Instruct',
+        description: 'H2O.ai\'s ultra-efficient model. Perfect for high-speed local processing on devices with very limited memory.',
+        sizeGB: 0.4,
+        ramRequired: 2,
+        url: 'https://huggingface.co/h2oai/h2o-danube3-500m-chat-GGUF/resolve/main/h2o-danube3-500m-chat-Q4_K_M.gguf',
+        filename: 'h2o-danube3-500m-chat-Q4_K_M.gguf',
+        tier: 'ultra-light',
+        provider: 'local',
+        supportsVision: false,
+        supportsThinking: false
     },
     {
         id: 'falcon3-1b-instruct',
@@ -417,7 +467,7 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
     {
         id: 'qwen3.5-0.8b',
         name: 'Qwen 3.5 0.8B',
-        description: 'Cutting-edge ultra-compact vision model. Features the latest architecture for lightning-fast multimodal interaction.',
+        description: 'Current best option with thinking + vision, but slightly over 500MB. Cutting-edge ultra-compact multimodal model.',
         sizeGB: 0.6,
         ramRequired: 4,
         url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
@@ -815,73 +865,7 @@ export const AVAILABLE_MODELS: DownloadableModel[] = [
         provider: 'local'
     },
 
-    // Image Generation Models (stable-diffusion.cpp compatible)
-    {
-        id: 'sd-v1.5-gguf',
-        name: 'Stable Diffusion v1.5',
-        description: 'The classic industry-standard image generator. Extremely versatile with a vast ecosystem, running efficiently on local hardware.',
-        sizeGB: 1.7,
-        ramRequired: 8,
-        url: 'https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/main/stable-diffusion-v1-5-Q4_0.gguf',
-        filename: 'stable-diffusion-v1-5-Q4_0.gguf',
-        tier: 'medium',
-        provider: 'local'
-    },
-    {
-        id: 'sdxl-turbo-gguf',
-        name: 'SDXL Turbo (Fast)',
-        description: 'A revolutionary fast image generator. Capable of creating high-quality images in just 1-4 steps for near-instant results.',
-        sizeGB: 4.5,
-        ramRequired: 12,
-        url: 'https://huggingface.co/gguf-org/z-image-gguf/resolve/main/z-image-turbo-q4_k_m.gguf',
-        filename: 'z-image-turbo-q4_k_m.gguf',
-        tier: 'medium',
-        provider: 'local'
-    },
-    {
-        id: 'flux-schnell-gguf',
-        name: 'Flux.1 Schnell (High Quality)',
-        description: 'State-of-the-art 12B parameter image generator. Delivers elite, photorealistic results with advanced composition and text adherence.',
-        sizeGB: 7.5,
-        ramRequired: 16,
-        url: 'https://huggingface.co/unsloth/FLUX.1-schnell-GGUF/resolve/main/FLUX.1-schnell-Q4_K_M.gguf',
-        filename: 'FLUX.1-schnell-Q4_K_M.gguf',
-        tier: 'heavy',
-        provider: 'local'
-    },
-    {
-        id: 'tiny-sd-gguf',
-        name: 'Tiny Stable Diffusion',
-        description: 'The smallest viable image generator. Optimized for extreme speed and minimal resource usage (only 0.4GB).',
-        sizeGB: 0.4,
-        ramRequired: 4,
-        url: 'https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/main/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf',
-        filename: 'stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf',
-        tier: 'ultra-light',
-        provider: 'local'
-    },
-    {
-        id: 'sdxs-gguf',
-        name: 'SDXS (Hyper Fast)',
-        description: 'Optimized for mobile-grade speed. Generates images in an instant with a tiny footprint, perfect for rapid prototyping.',
-        sizeGB: 0.6,
-        ramRequired: 4,
-        url: 'https://huggingface.co/gguf-org/z-image-gguf/resolve/main/z-image-turbo-q4_k_m.gguf',
-        filename: 'z-image-turbo-q4_k_m.gguf',
-        tier: 'ultra-light',
-        provider: 'local'
-    },
-    {
-        id: 'auraflow-v0.3-gguf',
-        name: 'AuraFlow v0.3',
-        description: 'Advanced open-weights image generator. High-fidelity output with superior prompt adherence and artistic flexibility.',
-        sizeGB: 8.0,
-        ramRequired: 16,
-        url: 'https://huggingface.co/city96/AuraFlow-v0.3-gguf/resolve/main/auraflow-v0.3-Q4_K_M.gguf',
-        filename: 'auraflow-v0.3-Q4_K_M.gguf',
-        tier: 'heavy',
-        provider: 'local'
-    },
+
 
     // Cloud Models
     {
@@ -1134,8 +1118,30 @@ export class DownloadService extends EventEmitter {
 
     /**
      * Returns the path of the first available model, or null.
+     * Prioritizes default model (qwen3.5-0.8b), then fallback model (qwen3.5-0.8b) if available.
      */
     getFirstAvailableModelPath(): string | null {
+        // First, try to find the default model (qwen3.5-0.8b)
+        const defaultModel = AVAILABLE_MODELS.find(m => m.id === 'qwen3.5-0.8b')
+        if (defaultModel) {
+            const defaultPath = path.join(this.modelsDir, defaultModel.filename)
+            if (existsSync(defaultPath)) {
+                console.log(`[DownloadService] Using default model: ${defaultPath}`)
+                return defaultPath
+            }
+        }
+
+        // Then try to find the fallback model (qwen3.5-0.8b)
+        const fallbackModel = AVAILABLE_MODELS.find(m => m.id === 'qwen3.5-0.8b')
+        if (fallbackModel) {
+            const fallbackPath = path.join(this.modelsDir, fallbackModel.filename)
+            if (existsSync(fallbackPath)) {
+                console.log(`[DownloadService] Using fallback model: ${fallbackPath}`)
+                return fallbackPath
+            }
+        }
+
+        // Then try other available models in order
         for (const model of AVAILABLE_MODELS) {
             const filePath = path.join(this.modelsDir, model.filename)
             if (existsSync(filePath)) return filePath

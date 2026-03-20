@@ -507,6 +507,49 @@
     margin-bottom: var(--space-lg);
 }
 
+.model-card__capabilities {
+    display: flex;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-md);
+    flex-wrap: wrap;
+}
+
+.model-card__capability {
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.model-card__capability--vision {
+    background: rgba(59, 130, 246, 0.1);
+    color: #2563eb;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.model-card__capability--thinking {
+    background: rgba(168, 85, 247, 0.1);
+    color: #7c3aed;
+    border: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+.model-card__capability--text {
+    background: rgba(107, 114, 128, 0.1);
+    color: #64748b;
+    border: 1px solid rgba(107, 114, 128, 0.2);
+}
+
+.model-card__capability--agent {
+    background: rgba(34, 197, 94, 0.1);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
 .model-card__meta {
     display: flex;
     align-items: center;
@@ -532,6 +575,27 @@
 .model-card__badge--recommended {
     background: rgba(79, 70, 229, 0.1);
     color: var(--accent-primary);
+}
+
+.model-card__badge--best-choice {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #ffffff;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+    animation: bestChoicePulse 2s infinite;
+}
+
+@keyframes bestChoicePulse {
+    0% { 
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+    }
+    50% { 
+        box-shadow: 0 2px 12px rgba(16, 185, 129, 0.3);
+    }
+    100% { 
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
+    }
 }
 
 /* Download action */

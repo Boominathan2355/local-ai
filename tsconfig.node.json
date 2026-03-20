@@ -18,6 +18,7 @@
     "include": [
         "electron/**/*",
         "electron.vite.config.ts",
-        "src/types/**/*"
+        "src/types/**/*",
+        "src/constants/**/*"
     ]
 }
