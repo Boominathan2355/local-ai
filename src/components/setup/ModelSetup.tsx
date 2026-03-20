@@ -771,7 +771,7 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                 </button>
                                 <button
                                     className="setup__secondary-btn"
-                                    onClick={() => window.open('https://github.com/Boominathan2355/local-ai/tree/main/docs', '_blank')}
+                                    onClick={() => window.open('https://github.com/Boominathan2355/local-ai/blob/main/documentation/Docs.md', '_blank')}
                                 >
                                     <BookOpen size={14} /> Documentation
                                 </button>
