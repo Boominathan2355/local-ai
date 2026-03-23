@@ -423,6 +423,15 @@ export function registerIpcHandlers(
         }
     )
 
+    ipcMain.handle(IPC_CHANNELS.MCP_GET_LOGS, (_event, conversationId?: string, limit?: number) => {
+        return mcpController.logger.getLogs(conversationId, limit)
+    })
+
+    ipcMain.handle(IPC_CHANNELS.MCP_CLEAR_LOGS, async () => {
+        await mcpController.logger.clearLogs()
+        return { success: true }
+    })
+
     // --- Settings / Storage ---
     ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, () => storage.getSettings())
     ipcMain.handle(IPC_CHANNELS.SETTINGS_SET, (_event, settings) => storage.setSettings(settings))
