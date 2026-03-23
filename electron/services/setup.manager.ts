@@ -402,71 +402,148 @@ export class SetupManager extends EventEmitter {
         this.isResolving = true
 
         return new Promise<string>((resolve, reject) => {
-            const options = {
-                hostname: 'api.github.com',
-                path: '/repos/ggml-org/llama.cpp/releases/latest',
-                headers: { 'User-Agent': 'LocalAI-Desktop-App' }
-            }
+            const maxRetries = 3
+            let retryCount = 0
 
-            https.get(options, (res) => {
-                let body = ''
-                console.log(`[SetupManager] resolveLatestBinaryUrl: HTTP ${res.statusCode}`)
-                res.on('data', (chunk: Buffer) => { body += chunk.toString() })
-                res.on('end', () => {
-                    console.log(`[SetupManager] resolveLatestBinaryUrl: Body length ${body.length}`)
-                    try {
-                        const release = JSON.parse(body)
-                        const assets = release.assets as Array<{ name: string; browser_download_url: string }>
-                        if (!assets || !Array.isArray(assets)) {
-                            reject(new Error('Failed to parse GitHub release info'))
+            const attemptRequest = () => {
+                const options = {
+                    hostname: 'api.github.com',
+                    path: '/repos/ggml-org/llama.cpp/releases/latest',
+                    headers: { 
+                        'User-Agent': 'LocalAI-Desktop-App',
+                        'Accept': 'application/vnd.github.v3+json'
+                    },
+                    timeout: 30000 // 30 second timeout
+                }
+
+                console.log(`[SetupManager] Attempt ${retryCount + 1}/${maxRetries} to resolve binary URL...`)
+
+                const req = https.get(options, (res) => {
+                    let body = ''
+                    console.log(`[SetupManager] resolveLatestBinaryUrl: HTTP ${res.statusCode}`)
+                    
+                    if (res.statusCode !== 200) {
+                        if (res.statusCode === 403) {
+                            reject(new Error('GitHub API rate limit exceeded. Please try again later.'))
                             return
                         }
+                        reject(new Error(`GitHub API returned status ${res.statusCode}`))
+                        return
+                    }
+                    
+                    res.on('data', (chunk: Buffer) => { body += chunk.toString() })
+                    res.on('end', () => {
+                        console.log(`[SetupManager] resolveLatestBinaryUrl: Body length ${body.length}`)
+                        try {
+                            const release = JSON.parse(body)
+                            const assets = release.assets as Array<{ name: string; browser_download_url: string }>
+                            if (!assets || !Array.isArray(assets)) {
+                                reject(new Error('Failed to parse GitHub release info'))
+                                return
+                            }
 
-                        let asset: { name: string; browser_download_url: string } | undefined
-                        console.log(`[SetupManager] Platform Check: IS_WINDOWS=${IS_WINDOWS}, platform=${process.platform}`)
+                            let asset: { name: string; browser_download_url: string } | undefined
+                            console.log(`[SetupManager] Platform Check: IS_WINDOWS=${IS_WINDOWS}, platform=${process.platform}`)
 
-                        if (IS_WINDOWS) {
-                            asset = assets.find((a) =>
-                                (a.name.includes('win-amd64') || a.name.includes('win-cpu-x64') || a.name.includes('win-x64')) &&
-                                a.name.endsWith('.zip') &&
-                                !a.name.includes('vulkan') &&
-                                !a.name.includes('rocm')
-                            )
+                            if (IS_WINDOWS) {
+                                asset = assets.find((a) =>
+                                    (a.name.includes('win-amd64') || a.name.includes('win-cpu-x64') || a.name.includes('win-x64')) &&
+                                    a.name.endsWith('.zip') &&
+                                    !a.name.includes('vulkan') &&
+                                    !a.name.includes('rocm')
+                                )
+                            } else {
+                                asset = assets.find((a) =>
+                                    a.name.includes('ubuntu-x64') &&
+                                    a.name.endsWith('.tar.gz') &&
+                                    !a.name.includes('vulkan') &&
+                                    !a.name.includes('rocm')
+                                )
+                            }
+
+                            if (!asset) {
+                                const platformLabel = IS_WINDOWS ? 'Windows (x64)' : 'Ubuntu (x64)'
+                                console.error(`[SetupManager] No compatible binary found for ${platformLabel}. Available assets:`, assets.map(a => a.name))
+                                reject(new Error(`No ${platformLabel} binary found in latest release`))
+                                return
+                            }
+
+                            console.log(`[SetupManager] Resolved latest binary URL: ${asset.browser_download_url} (${asset.name})`)
+                            resolve(asset.browser_download_url)
+                        } catch (err) {
+                            console.error('[SetupManager] Failed to resolve latest binary URL:', err)
+                            reject(new Error('Failed to parse GitHub API response'))
+                        }
+                    })
+                    res.on('error', (err) => {
+                        console.error('[SetupManager] GitHub API request error:', err)
+                        if (retryCount < maxRetries - 1) {
+                            retryCount++
+                            console.log(`[SetupManager] Retrying in 2 seconds...`)
+                            setTimeout(attemptRequest, 2000)
                         } else {
-                            asset = assets.find((a) =>
-                                a.name.includes('ubuntu-x64') &&
-                                a.name.endsWith('.tar.gz') &&
-                                !a.name.includes('vulkan') &&
-                                !a.name.includes('rocm')
-                            )
+                            // Fallback to direct URL if GitHub API fails
+                            console.log('[SetupManager] GitHub API failed, using fallback URL...')
+                            const fallbackUrl = this.getFallbackBinaryUrl()
+                            if (fallbackUrl) {
+                                console.log(`[SetupManager] Using fallback URL: ${fallbackUrl}`)
+                                resolve(fallbackUrl)
+                            } else {
+                                reject(new Error('Failed to connect to GitHub API after multiple attempts. Please check your internet connection.'))
+                            }
                         }
-
-                        if (!asset) {
-                            const platformLabel = IS_WINDOWS ? 'Windows (x64)' : 'Ubuntu (x64)'
-                            console.error(`[SetupManager] No compatible binary found for ${platformLabel}. Available assets:`, assets.map(a => a.name))
-                            reject(new Error(`No ${platformLabel} binary found in latest release`))
-                            return
+                    })
+                }).on('error', (err) => {
+                    console.error('[SetupManager] GitHub API connection error:', err)
+                    if (retryCount < maxRetries - 1) {
+                        retryCount++
+                        console.log(`[SetupManager] Retrying in 2 seconds...`)
+                        setTimeout(attemptRequest, 2000)
+                    } else {
+                        // Fallback to direct URL if GitHub API fails
+                        console.log('[SetupManager] GitHub API failed, using fallback URL...')
+                        const fallbackUrl = this.getFallbackBinaryUrl()
+                        if (fallbackUrl) {
+                            console.log(`[SetupManager] Using fallback URL: ${fallbackUrl}`)
+                            resolve(fallbackUrl)
+                        } else {
+                            reject(new Error('Failed to connect to GitHub API after multiple attempts. Please check your internet connection.'))
                         }
-
-                        console.log(`[SetupManager] Resolved latest binary URL: ${asset.browser_download_url} (${asset.name})`)
-                        resolve(asset.browser_download_url)
-                    } catch (err) {
-                        console.error('[SetupManager] Failed to resolve latest binary URL:', err)
-                        reject(new Error('Failed to parse GitHub API response'))
+                    }
+                }).on('timeout', () => {
+                    console.error('[SetupManager] GitHub API request timeout')
+                    if (retryCount < maxRetries - 1) {
+                        retryCount++
+                        console.log(`[SetupManager] Retrying in 2 seconds...`)
+                        setTimeout(attemptRequest, 2000)
+                    } else {
+                        // Fallback to direct URL if GitHub API times out
+                        console.log('[SetupManager] GitHub API timed out, using fallback URL...')
+                        const fallbackUrl = this.getFallbackBinaryUrl()
+                        if (fallbackUrl) {
+                            console.log(`[SetupManager] Using fallback URL: ${fallbackUrl}`)
+                            resolve(fallbackUrl)
+                        } else {
+                            reject(new Error('GitHub API request timed out after multiple attempts. Please check your internet connection.'))
+                        }
                     }
                 })
-                res.on('error', (err) => {
-                    console.error('[SetupManager] GitHub API request error:', err)
-                    reject(err)
-                })
-            }).on('error', (err) => {
-                console.error('[SetupManager] GitHub API request error:', err)
-                this.isResolving = false
-                reject(err)
-            })
+            }
+
+            // Start the first attempt
+            attemptRequest()
         }).finally(() => {
             this.isResolving = false
         })
+    }
+
+    private getFallbackBinaryUrl(): string | null {
+        // Fallback to known stable release URLs
+        if (IS_WINDOWS) {
+            return 'https://github.com/ggml-org/llama.cpp/releases/download/b3995/llama-b3995-bin-win-x64.zip'
+        } else {
+            return 'https://github.com/ggml-org/llama.cpp/releases/download/b3995/llama-b3995-bin-ubuntu-x64.tar.gz'
+        }
     }
 
     private downloadFile(url: string, destPath: string, downloadId: string, resume = false): Promise<void> {

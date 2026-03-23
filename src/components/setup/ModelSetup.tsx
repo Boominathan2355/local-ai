@@ -489,6 +489,10 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                             <p className="setup__step-desc">
                                 First, download the llama.cpp inference engine (~35 MB).
                                 This is the runtime that powers your AI assistant.
+                                <br />
+                                <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-secondary)' }}>
+                                    Version: b3995 (Stable Release)
+                                </span>
                             </p>
                             <button
                                 className="setup__download-btn"

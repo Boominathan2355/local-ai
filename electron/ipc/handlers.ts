@@ -247,10 +247,13 @@ export function registerIpcHandlers(
     function getModelMetadata(modelId: string | null) {
         if (!modelId) return { supportsVision: false, supportsThinking: false }
         const model = downloadService.getAvailableModels().find(m => m.id === modelId)
-        return {
+        const metadata = {
             supportsVision: model?.supportsVision ?? false,
             supportsThinking: model?.supportsThinking ?? false
         }
+        console.log(`[Chat] Model metadata for ${modelId}:`, metadata)
+        console.log(`[Chat] Model found:`, !!model, model?.name)
+        return metadata
     }
 
     ipcMain.handle(IPC_CHANNELS.MODEL_START, async () => {
@@ -665,7 +668,7 @@ export function registerIpcHandlers(
                 // but all terminal tools are disabled, send a system note:
                 const terminalRequested = enabledToolCategories.includes('terminal')
                 const terminalToolsEnabled = tools?.some(t => {
-                    const def = toolController.registry.getTool(t.function.name)
+                    const def = mcpController.registry.getTool(t.function.name)
                     return def?.category === 'terminal' && def?.enabled
                 })
 
@@ -747,9 +750,22 @@ export function registerIpcHandlers(
                 const runGeneration = async (): Promise<void> => {
                     if (signal.aborted) return
 
+                    // Check if thinking mode is actually enabled in the server
+                    const isThinkingEnabled = llamaServer.isThinkingModeEnabled() && 
+                        selectedModel?.supportsThinking
+
+                    // For thinking models, don't add system prefill that conflicts with enable_thinking
+                    const messages = isThinkingEnabled 
+                        ? history // Only use history, no system prompt for thinking models
+                        : [{ role: 'system', content: finalPrompt }, ...history]
+
+                    console.log(`[Chat] Thinking mode enabled: ${isThinkingEnabled}`)
+                    console.log(`[Chat] Messages count: ${messages.length}`)
+                    console.log(`[Chat] Message structure:`, messages.map(m => ({ role: m.role, content: m.content?.substring(0, 50) + '...' })))
+
                     const result = await streamCompletion(
                         llamaServer.baseUrl,
-                        [{ role: 'system', content: finalPrompt }, ...history],
+                        messages,
                         signal,
                         (token) => win.webContents.send(IPC_CHANNELS.CHAT_STREAM_TOKEN, {
                             conversationId,
@@ -1185,6 +1201,8 @@ async function streamCompletion(
         body.tools = tools
         body.tool_choice = 'auto'
     }
+
+    console.log(`[Chat] Request body:`, JSON.stringify(body, null, 2))
 
     const response = await fetch(`${endpoint}/v1/chat/completions`, {
         method: 'POST',
