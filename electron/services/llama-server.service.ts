@@ -129,6 +129,13 @@ export class LlamaServerService extends EventEmitter {
             console.log(`[LlamaServer] Vision enabled with mmproj: ${this.config.mmprojPath}`)
         }
 
+        // Enable thinking mode for models that support it
+        if (this.metadata.supportsThinking) {
+            // Check if the binary supports thinking mode (available in recent llama.cpp versions)
+            args.push('--enable-thinking')
+            console.log(`[LlamaServer] Thinking mode enabled for model (platform: ${process.platform})`)
+        }
+
         try {
             this.process = spawn(this.config.binaryPath, args, {
                 stdio: ['ignore', 'pipe', 'pipe']
@@ -149,6 +156,14 @@ export class LlamaServerService extends EventEmitter {
             })
 
             this.process.on('error', (err) => {
+                // Check if the error is related to unsupported thinking mode flag
+                if (err.message.includes('--enable-thinking') || err.message.includes('thinking')) {
+                    console.warn('[LlamaServer] Thinking mode not supported by this binary version, retrying without it...')
+                    // Retry without thinking mode flag
+                    this.startWithoutThinkingMode()
+                    return
+                }
+                
                 this.setStatus('error')
                 this.emit('error', `Process error: ${err.message}`)
             })
@@ -190,6 +205,68 @@ export class LlamaServerService extends EventEmitter {
 
             setTimeout(check, 2000)
         })
+    }
+
+    /**
+     * Fallback method to start server without thinking mode flag
+     */
+    private async startWithoutThinkingMode(): Promise<void> {
+        console.log('[LlamaServer] Starting server without thinking mode...')
+        
+        const args = [
+            '-m', this.config.modelPath,
+            '-t', String(this.config.threads),
+            '-c', String(this.config.contextSize),
+            '-ngl', String(this.config.gpuLayers),
+            '--host', this.config.host,
+            '--port', String(this.config.port)
+        ]
+
+        if (this.config.mmprojPath) {
+            args.push('--mmproj', this.config.mmprojPath)
+            console.log(`[LlamaServer] Vision enabled with mmproj: ${this.config.mmprojPath}`)
+        }
+
+        // Note: Thinking mode disabled for compatibility
+
+        try {
+            this.process = spawn(this.config.binaryPath, args, {
+                stdio: ['ignore', 'pipe', 'pipe']
+            })
+
+            this.process.stdout?.on('data', (data: Buffer) => {
+                this.emit('log', data.toString())
+            })
+
+            this.process.stderr?.on('data', (data: Buffer) => {
+                this.emit('log', data.toString())
+            })
+
+            this.process.on('exit', (code) => {
+                if (!this.isShuttingDown && code !== 0) {
+                    this.handleCrash(code)
+                }
+            })
+
+            this.process.on('error', (err) => {
+                this.setStatus('error')
+                this.emit('error', `Process error: ${err.message}`)
+            })
+
+            await this.waitForReady()
+            this.startHealthCheck()
+        } catch (err) {
+            this.setStatus('error')
+            const message = err instanceof Error ? err.message : 'Unknown error starting server'
+            this.emit('error', message)
+        }
+    }
+
+    /**
+     * Check if thinking mode is enabled
+     */
+    public isThinkingModeEnabled(): boolean {
+        return this.metadata.supportsThinking
     }
 
     /**
