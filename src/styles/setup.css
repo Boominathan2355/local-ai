@@ -806,6 +806,81 @@
     max-width: 480px;
 }
 
+/* Error Banner with Retry */
+.setup__error-banner {
+    width: 100%;
+    max-width: 600px;
+    margin: var(--space-xl) auto;
+    padding: 16px 20px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.06), rgba(239, 68, 68, 0.02));
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.08);
+}
+
+.setup__error-banner-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    color: #dc2626;
+}
+
+.setup__error-banner-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.setup__error-banner-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #dc2626;
+}
+
+.setup__error-banner-message {
+    font-size: 12px;
+    color: #9b1c1c;
+    line-height: 1.4;
+    word-break: break-word;
+    opacity: 0.85;
+}
+
+.setup__retry-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: 8px;
+    background: #dc2626;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(220, 38, 38, 0.25);
+    flex-shrink: 0;
+}
+
+.setup__retry-btn:hover {
+    background: #b91c1c;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(220, 38, 38, 0.3);
+}
+
+.setup__retry-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(220, 38, 38, 0.2);
+}
+
 .setup__skip {
     color: var(--text-tertiary);
     font-size: var(--font-size-sm);

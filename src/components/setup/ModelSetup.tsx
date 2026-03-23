@@ -3,7 +3,7 @@ import {
     Rocket, Download, Cpu, Shield, Sparkles, Check, 
     ChevronRight, Info, AlertTriangle, Monitor, 
     HardDrive, Zap, Globe, Lock, Pause, Play, X,
-    ArrowRight, BookOpen
+    ArrowRight, BookOpen, RefreshCw
 } from 'lucide-react'
 
 import { getLocalAI } from '../../helpers/ipc.helper'
@@ -363,6 +363,15 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
             setIsBackendProcessing(false)
         }
     }
+    const handleRetry = (): void => {
+        setError(null)
+        if (currentStep === 'binary') {
+            handleDownloadBinary()
+        } else if (currentStep === 'model') {
+            handleDownloadModel()
+        }
+    }
+
     const handleAction = (): void => {
         if (currentStep === 'binary') {
             handleDownloadBinary()
@@ -824,6 +833,26 @@ export const ModelSetup: React.FC<ModelSetupProps> = ({ onComplete }) => {
                                 </div>
                             )}
                         </div>
+                    </div>
+                )}
+
+                {/* Error Banner with Retry */}
+                {error && (
+                    <div className="setup__error-banner animate-fadeIn">
+                        <div className="setup__error-banner-content">
+                            <AlertTriangle size={18} />
+                            <div className="setup__error-banner-text">
+                                <span className="setup__error-banner-title">Connection Error</span>
+                                <span className="setup__error-banner-message">{error}</span>
+                            </div>
+                        </div>
+                        <button
+                            className="setup__retry-btn"
+                            onClick={handleRetry}
+                            id="retry-download-btn"
+                        >
+                            <RefreshCw size={14} /> Retry
+                        </button>
                     </div>
                 )}
 

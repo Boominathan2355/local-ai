@@ -149,6 +149,12 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
         const api = getLocalAI()
         if (!api) return
         api.download.cancel(`model:${modelId}`)
+        // Immediately remove from active downloads so the UI cleans up
+        setActiveDownloads((prev) => {
+            const next = { ...prev }
+            delete next[`model:${modelId}`]
+            return next
+        })
     }
 
     const handlePauseResume = (modelId: string): void => {
@@ -375,12 +381,7 @@ export const ModelLibrary: React.FC<ModelLibraryProps> = ({ isOpen, onClose, act
         }
     }
 
-    const filteredModels = getFilteredModels().filter(m => {
-        const isDownloadingAny = Object.keys(activeDownloads).length > 0
-        if (!isDownloadingAny) return true
-        const isThisDownloading = !!activeDownloads[`model:${m.id}`]
-        return isThisDownloading
-    })
+    const filteredModels = getFilteredModels()
 
     return (
         <div className="library-overlay" id="model-library">
